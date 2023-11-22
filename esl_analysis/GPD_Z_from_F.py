@@ -171,3 +171,28 @@ def Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
         else:
             z[iXtrp] = z_0p2[iXtrp]+np.log(f[iXtrp]/0.2) * (0-z_0p2[iXtrp])/np.log(avg_exceed/0.2)
     return z
+
+
+def get_return_curve(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
+    
+    assert np.shape(scale)==np.shape(shape)
+    
+    f_=f
+    if np.isscalar(scale) == False:
+        f_ = np.transpose(np.matlib.repmat(f_,len(scale),1)) #repeat f num_mc times
+        scale    = np.matlib.repmat(scale,len(f),1) 
+        shape    = np.matlib.repmat(shape,len(f),1)
+        
+    z=np.nan*f_ #initialize
+    
+    #compute z from f using gpd parameters
+    if below_gpd == 'mhhw':
+        z = Z_from_F_mhhw(scale,shape,loc,avg_exceed,f_,mhhw)
+        
+    elif below_gpd == 'Sweet22':
+        z = Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f_)
+    
+    elif not below_gpd:
+        z = Z_from_F(scale,shape,loc,avg_exceed,f_)
+    
+    return z
