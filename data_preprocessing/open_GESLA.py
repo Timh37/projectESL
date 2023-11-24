@@ -38,7 +38,7 @@ def resample_data(rawdata,resample_freq):
     return output
 
 
-def readmeta(filename):
+def readmeta_GESLA2(filename):
     with open(filename,encoding = 'raw_unicode_escape') as myfile:
         head = [next(myfile) for x in range(9)]
     station_name = head[1][12:-1].strip()	 
@@ -47,7 +47,38 @@ def readmeta(filename):
     start_date = np.datetime64(head[7][18:-1].strip().replace('/','-'))
     end_date = np.datetime64(head[8][16:-1].strip().replace('/','-'))
 	
-    return(station_name, station_lat, station_lon, start_date, end_date)
+    return (station_name, station_lat, station_lon, start_date, end_date)
+
+def extract_GESLA2_locations(gesladir):
+    # Get a list of the gesla database files
+    geslafiles = os.listdir(gesladir)
+    
+    # Initialize the station variables
+    station_names = []
+    station_lats = []
+    station_lons = []
+    station_filenames = []
+    
+    # Loop over the gesla files
+    for this_file in geslafiles:
+	
+        #Extract the station header information
+        this_name, this_lat, this_lon, start_date, end_date = readmeta_GESLA2(os.path.join(gesladir, this_file))
+        
+        # ppend this information to appropriate lists
+        station_names.append(this_name)	 
+        station_lats.append(float(this_lat))
+        station_lons.append(float(this_lon))
+        station_filenames.append(this_file)
+    
+    return (station_names,station_lats,station_lons,station_filenames)
+
+def extract_GESLA3_locations(metafile_path):
+    
+    meta = pd.read_csv(metafile_path)
+    
+    return (list(meta['SITE NAME']),list(meta['LATITUDE']),list(meta['LONGITUDE']),list(meta['FILE NAME']))
+    
 
 def get_data_starting_index(file_name):
     with open(file_name,errors='ignore') as fp:
@@ -103,7 +134,7 @@ def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
     
     datasets = {}
     for fn in tqdm(fns):
-        metadata = readmeta(os.path.join(path_to_files,fn))
+        metadata = readmeta_GESLA2(os.path.join(path_to_files,fn))
  
         if (metadata[-1] - metadata[-2])/np.timedelta64(1, 's')/(365.25*24*3600) < min_yrs:
             continue
