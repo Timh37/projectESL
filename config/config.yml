@@ -1,0 +1,7 @@
+esl:
+    input_type: 'raw' #['raw','gpd_params','return_curves']
+    input_source: 'gesla3'
+    sl_projections: "/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-GESLA3-samples-total/wf_1f/ssp585/per_tg/Fort_Hamilton_New_York_1.nc"
+
+project_af:
+    target_years: 2050,2100
