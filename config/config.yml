@@ -1,7 +1,23 @@
+global-options:
+    num_mc: 20000
 esl:
     input_type: 'raw' #['raw','gpd_params','return_curves']
     input_source: 'gesla3'
+    preproc:
+        input_min_yrs: 20
+        input_resample_freq: 'D_max' #['H_mean', 'D_mean','D_max']
+        deseasonalize: 1
+        detrend: 1
+        subtract_amean: 0
+    declus_window: 3
+    extremes_threshold: 99
+   
+projecting:
     sl_projections: "/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-GESLA3-samples-total/wf_1f/ssp585/per_tg/Fort_Hamilton_New_York_1.nc"
-
-project_af:
-    target_years: 2050,2100
+    refFreqs: 'diva' #'flopros', number
+    
+output:
+    quantiles: .05,.5,.95
+    AF:
+        target_years: 2050,2100
+    project_AFs: 1
