@@ -23,7 +23,7 @@ def find_diva_protection_levels(qlons,qlats,diva_fn,maxdist):
         
         #do a first filtering based on angular distance to segment/polygon center points (more efficient than shapely distance)
         angdists = angdist(qlat,qlon,diva.lati.values,diva.longi.values)
-        nearby = np.where(angdists<10)[0]
+        nearby = np.where(angdists<5)[0]
         if len(nearby)==0:
             nearest_segments.append(np.nan)
             #add a warning?
@@ -70,14 +70,14 @@ def find_diva_protection_levels(qlons,qlats,diva_fn,maxdist):
 
 #visual test
 if __name__ == "__main__":
-    
+    maxdist=15
     diva_fn = "/Users/timhermans/Documents/Data/DIVA/cls.gpkg"
     diva = geopd.read_file(diva_fn)
     g3_meta = pd.read_csv('/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3_ALL.csv')
     qlats = g3_meta['LATITUDE'].values
     qlons = g3_meta['LONGITUDE'].values
 
-    protection_levels = find_diva_protection_levels(qlons,qlats,diva_fn,15)
+    protection_levels = find_diva_protection_levels(qlons,qlats,diva_fn,maxdist)
     
     import matplotlib.pyplot as plt
     from cartopy import crs as ccrs
