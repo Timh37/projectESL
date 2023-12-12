@@ -8,7 +8,7 @@ from open_GESLA import extract_GESLA2_locations, extract_GESLA3_locations, open_
 from preprocess_GESLA import detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
 from analyze_GESLA_ESLs import pot_extremes_from_gesla_dfs, fit_gpd_to_gesla_extremes
 
-def ESL_stats_from_raw_GESLA(queried,cfg,maxdist=0.1):
+def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
         
     min_yrs = cfg['esl']['preproc']['input_min_yrs']
     deseasonalize = cfg['esl']['preproc']['deseasonalize']
@@ -20,7 +20,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist=0.1):
     
     #get GESLA locations
     if source == 'gesla2':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations('/Users/timhermans/Documents/GitHub/projectESL/GESLA2')#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
     elif source == 'gesla3':
         (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations('/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3_ALL.csv')
     else:
@@ -70,7 +70,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist=0.1):
             try:
                 #this tide gauge data
                 if source == 'gesla2':
-                    dfs = open_GESLA2_files('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/',
+                    dfs = open_GESLA2_files('/Users/timhermans/Documents/GitHub/projectESL/GESLA2',
                                         'H_mean',min_yrs=min_yrs,fns=[esl_file])
     
                 elif source == 'gesla3':
