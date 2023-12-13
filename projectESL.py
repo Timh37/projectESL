@@ -3,33 +3,34 @@
 """
 Created on Thu Nov 23 10:51:03 2023
 
+Execution of projectESL according to user configuration.
+
 @author: timhermans
 """
 import sys
-sys.path.insert(2, '/Users/timhermans/Documents/GitHub/projectESL/esl_analysis')
-sys.path.insert(3, '/Users/timhermans/Documents/GitHub/projectESL/projecting')
+sys.path.insert(0, 'data_preprocessing')
+sys.path.insert(1, 'esl_analysis')
+sys.path.insert(2, 'projecting')
 
 import os
 import yaml
 import xarray as xr
 import numpy as np
-from utils import mindist
-from multivariate_normal_gpd_samples_from_covmat import multivariate_normal_gpd_samples_from_covmat
-from compute_AF import compute_AF
-from GPD_Z_from_F import get_return_curve
 import pandas as pd
+from utils import mindist
+import warnings
+import pickle
 
-with open('config.yml', 'r') as f: #load config
+with open('config.yml', 'r') as f: #open configuration file
     cfg = yaml.safe_load(f)
 
-f= 10**np.linspace(-6,2,num=2001)
+out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
+
+f= 10**np.linspace(-6,2,num=2001) #input frequencies to compute return heights
 f=np.append(f,np.arange(101,183))
 
-#### 1. Get & manipulate SLR projections (to be loaded from cfg)
-#slr = xr.open_mfdataset(("/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-GESLA3-samples-total/wf_1f/ssp585/per_tg/Fort_Hamilton_New_York_1.nc",
-#                         "/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-GESLA3-samples-total/wf_1f/ssp585/per_tg/Aberdeen.nc"),concat_dim='locations',combine='nested').load()
-slr = xr.open_mfdataset(("/Users/timhermans/Documents/GitHub/projectESL/Fort_Hamilton_New_York_1.nc"),concat_dim='locations',combine='nested').load()
-#slr = xr.open_dataset(cfg['esl']['sl_projections']) #open sl projections
+#### 1. Get & manipulate SLR projections
+slr = xr.open_mfdataset((cfg['projecting']['slr_filename']),concat_dim='locations',combine='nested').load()
 
 if 'locations' not in slr.dims:
     slr = slr.expand_dims('locations')
@@ -41,185 +42,182 @@ if 'samples' in slr.dims:
         idx = np.sort(np.random.choice(len(slr.samples), size=cfg['global-options']['num_mc'], replace=False))
     slr = slr.isel(samples = idx)
 
-if slr.sea_level_change.units=='mm':
-    slr['sea_level_change'] = slr['sea_level_change']/1000
-    slr.sea_level_change.attrs['units'] = 'm'
-    
+try:
+    slr = slr.rename({'latitude':'lat','longitude':'lon'})
+except:
+    pass
 ####
 
 #### 2. Get ESL information near queried locations
-esl_statistics = {}
+esl_statistics = {} #initialize dictionary
 
-#derive GPD parameters from raw data
-if (cfg['esl']['input_type'] == 'raw') & (cfg['esl']['input_source'].lower() in ['gesla2','gesla3']): #if using raw data from GESLA
-    from ESL_stats_from_raw_GESLA import ESL_stats_from_raw_GESLA
-    esl_statistics = ESL_stats_from_raw_GESLA(slr,cfg,0.1)
-
-elif (cfg['esl']['input_type'] == 'raw') & (cfg['esl']['input_source'].lower() not in ['gesla2','gesla3']):
-    raise Exception('Cannot (yet) analyze ESLs of configured input source.')
-
-#open pre-defined GPD parameters
-#to implement
-
-#open pre-defined return curves    
-if (cfg['esl']['input_type'] == 'return_curves') & (cfg['esl']['input_source']=='COAST-RP'):
-    coast_rp_coords = pd.read_pickle(os.path.join('/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset','pxyn_coastal_points.xyn'))
+if cfg['esl_analysis']['input_type'] == 'raw': #derive GPD parameters from raw data
     
-    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1) for x,y in zip(slr.lat.values, slr.lon.values)]
+    if cfg['esl_analysis']['input_source'].lower() in ['gesla2','gesla3']: #if using raw data from GESLA
+        from ESL_stats_from_raw_GESLA import ESL_stats_from_raw_GESLA
+        esl_statistics = ESL_stats_from_raw_GESLA(slr,cfg,0.1)
+
+    elif cfg['esl_analysis']['input_source'].lower() not in ['gesla2','gesla3']:
+        raise Exception('Cannot (yet) analyze ESLs of configured input source.')
+
+    if cfg['output']['store_esl_statistics']:
+        pickle.dump(esl_statistics,open(os.path.join(cfg['output']['output_dir'],'esl_statistics.pkl'),'wb'))
     
-    for i in np.arange(len(slr.locations)):
-        this_id = str(int(coast_rp_coords.iloc[min_idx[0][0]].name))
-        rc = pd.read_pickle(os.path.join('/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset','rp_full_empirical_station_'+this_id+'.pkl'))
-        rc = rc['rp'][np.isfinite(rc['rp'])]
+#read in pre-defined GPD parameters
+#elif cfg['esl'][input_type'] == 'gpd_params'
+#to be implemented
+
+#read in pre-defined return curves    
+elif cfg['esl_analysis']['input_type'] == 'return_curves':
+    if cfg['esl_analysis']['input_source'].lower() =='coast-rp':
+        coast_rp_coords = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'pxyn_coastal_points.xyn'))
+        min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1) for x,y in zip(slr.lat.values, slr.lon.values)]
         
-        esl_statistics[slr.locations.values[i]] = {}
-        esl_statistics[slr.locations.values[i]]['z_hist'] = rc.index.values
-        esl_statistics[slr.locations.values[i]]['f_hist'] = 1/rc.values
+        for i in np.arange(len(slr.locations)):
+            this_id = str(int(coast_rp_coords.iloc[min_idx[0][0]].name))
+            rc = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'rp_full_empirical_station_'+this_id+'.pkl'))
+            rc = rc['rp'][np.isfinite(rc['rp'])]
+            
+            esl_statistics[slr.locations.values[i]] = {}
+            esl_statistics[slr.locations.values[i]]['z_hist'] = rc.index.values
+            esl_statistics[slr.locations.values[i]]['f_hist'] = 1/rc.values
+        
+    elif cfg['esl_analysis']['input_source']!='COAST-RP':
+        raise Exception('Cannot (yet) open return curves of configured input source.')    
     
-elif (cfg['esl']['input_type'] == 'return_curves') & (cfg['esl']['input_source']!='COAST-RP'):
-    raise Exception('Cannot (yet) open return curves of of configured input source.')    
+else:
+    raise Exception('Input type not recognized.')
 #### 
         
-	
 #### 3. Do the projections
-#determine reference frequencies
-if cfg['projecting']['refFreqs'] == 'diva': #find contemporary DIVA flood protection levels
-    qlats = [slr.lat.sel(locations=k).values for k in esl_statistics.keys()]
-    qlons = [slr.lon.sel(locations=k).values for k in esl_statistics.keys()]
+if cfg['projecting']['project_AFs'] + cfg['projecting']['project_AF_timing'] > 0 :
+    sites_output = []
     
-    from find_diva_protection_levels import find_diva_protection_levels
-    
-    refFreqs = find_diva_protection_levels(qlons,qlats,"/Users/timhermans/Documents/Data/DIVA/cls.gpkg",15)
-
-elif cfg['projecting']['refFreqs'] == 'flopros': #find contemporary FLOPROS flood protection levels
-    qlats = [slr.lat.sel(locations=k).values for k in esl_statistics.keys()]
-    qlons = [slr.lon.sel(locations=k).values for k in esl_statistics.keys()]
-    
-    from find_flopros_protection_levels import find_flopros_protection_levels
-    
-    refFreqs = find_flopros_protection_levels(qlons,qlats,'/Users/timhermans/Documents/Data/FLOPROS/Tiggeloven/',15)    
-
-else:
-    if ~np.isscalar(refFreqs):
-        raise Exception('Reference frequency must be DIVA, FLOPROS or a scalar value.')
-    else:
-        refFreqs = np.tile(refFreqs,len(esl_statistics))
-
-#project amplification factors relative to reference frequencies     
-out_qnts = np.array(cfg['output']['quantiles'].split(',')).astype('float')
-   
-if cfg['output']['project_AFs']: #if projecting amplification factors
-    target_years = np.array(str(cfg['output']['AF']['target_years']).split(',')).astype('int')
-    
-    try:
-        slr_at_output_years = slr.sel(years=target_years) #select target years
-    except:
-        raise Exception('Could not select target years from sea-level projections.')
-
-    #loop over queried sites with required information:
-    i=0
-    output = []
-    for site_id,stats in esl_statistics.items():
-        refFreq = refFreqs[i]
-            
-        if cfg['esl']['input_type'] == 'raw': #generate return curves
-            scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(stats['scale'].iloc[0],stats['shape'].iloc[0],stats['cov'].iloc[0],cfg['global-options']['num_mc'])
-            z_hist = get_return_curve(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
-            f_ = f
-            
-        elif cfg['esl']['input_type'] == 'return_curves': #load in return curves
-            z_hist = stats['z_hist']
-            f_ = stats['f_hist']
-        
-        
-        for yr in target_years:
-            site_output = []
-            
-            z_hist,z_fut,AF = compute_AF(f_,z_hist,slr_at_output_years.sel(locations=int(site_id)).sel(years=yr).sea_level_change.values,refFreq) #samples
-        
-            #to-do: store outputs
-            ds = xr.Dataset(
-                    data_vars=dict(
-                        z_hist=(["qnt","f"], np.quantile(z_hist,q=out_qnts,axis=-1)),
-                        z_fut=(["qnt",'f'], np.quantile(z_fut,q=out_qnts,axis=-1)),
-                        AF=(["qnt"],np.quantile(AF,out_qnts))
-                    ),
-                    coords=dict(
-                        f=(["f"], f),
-                        qnt=(["qnt"], out_qnts),
-                        year=yr,
-                        site=site_id,
-                    ),
-                )
-            site_output.append(ds)
-        output.append(xr.concat(site_output,dim='year'))
-        i+=1
-    output_ds = xr.concat(output,dim='site')
-    output_ds.attrs['config'] = cfg
-    output_ds['lat'] = ('site',[slr.lat.sel(locations=k).values for k in output_ds.site.values])
-    output_ds['lon'] = ('site',[slr.lon.sel(locations=k).values for k in output_ds.site.values])
-    output_ds.set_coords(('lon','lat'))
-    
-#do quadratic interpolation to get years between decades before computing the timing    
-
-
-if cfg['output']['project_AF_timing']: 
+    from multivariate_normal_gpd_samples_from_covmat import multivariate_normal_gpd_samples_from_covmat
+    from GPD_Z_from_F import get_return_curve
     from compute_AF_timing import compute_AF_timing
-    annual_slr = slr.interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic')
+    from compute_AF import compute_AF
     
-    i=0
-    output = []
+    settings = cfg['projecting']['projection_settings']
+    
+    if slr.sea_level_change.units=='mm': #check sea-level change unit is meter
+        slr['sea_level_change'] = slr['sea_level_change']/1000
+        slr.sea_level_change.attrs['units'] = 'm'
+    elif slr.sea_level_change.units=='cm':
+        slr['sea_level_change'] = slr['sea_level_change']/100
+        slr.sea_level_change.attrs['units'] = 'm'
+        
+        
+    #determine reference frequencies
+    if settings['refFreqs'] == 'diva': #find contemporary DIVA flood protection levels
+        qlats = [slr.lat.sel(locations=k).values for k in esl_statistics.keys()]
+        qlons = [slr.lon.sel(locations=k).values for k in esl_statistics.keys()]
+        
+        from find_diva_protection_levels import find_diva_protection_levels
+        
+        refFreqs = find_diva_protection_levels(qlons,qlats,"/Users/timhermans/Documents/Data/DIVA/cls.gpkg",15)
+    
+    elif settings['refFreqs'] == 'flopros': #find contemporary FLOPROS flood protection levels
+        qlats = [slr.lat.sel(locations=k).values for k in esl_statistics.keys()]
+        qlons = [slr.lon.sel(locations=k).values for k in esl_statistics.keys()]
+        
+        from find_flopros_protection_levels import find_flopros_protection_levels
+        
+        refFreqs = find_flopros_protection_levels(qlons,qlats,'/Users/timhermans/Documents/Data/FLOPROS/Tiggeloven/',15)    
+    
+    else:
+        if np.isscalar(refFreqs): #use constant reference frequency for every location
+            refFreqs = np.tile(refFreqs,len(esl_statistics))
+        else: 
+            raise Exception('Reference frequency must be "DIVA", "FLOPROS" or a constant.')
+    
+    #check if target_years in slr projections
+    if cfg['projecting']['project_AFs']:
+        target_years_ = np.array(str(settings['target_years']).split(',')).astype('int')
+        target_years = np.intersect1d(target_years_,slr.years)
+        
+        if len(target_years)!=len(target_years_):
+            warnings.warn('SLR projections do not contain all target years, continuing with a smaller set of target years.')
+    
+    #loop over sites in esl_statistics to do the projections:
+    i=0    
     for site_id,stats in esl_statistics.items():
-        refFreq = refFreqs[i]
+        refFreq = refFreqs[i] #get reference frequency for this site
         
-        i+=1
+        if ~np.isfinite(refFreq):
+            print(settings['refFreqs']+' protection standard unavailable for site: '+site_id+', moving on to next site.')
+            continue
         
-        if cfg['esl']['input_type'] == 'raw': #generate return curves
+        #get return curves
+        if cfg['esl_analysis']['input_type'] == 'raw': #generate return curves
             scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(stats['scale'].iloc[0],stats['shape'].iloc[0],stats['cov'].iloc[0],cfg['global-options']['num_mc'])
             z_hist = get_return_curve(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
             f_ = f
-            
-        elif cfg['esl']['input_type'] == 'return_curves': #load in return curves
+        
+        #to-do implement input type gpd params
+        
+        elif cfg['esl_analysis']['input_type'] == 'return_curves': #load in return curves
             z_hist = stats['z_hist']
             f_ = stats['f_hist']
             
+        #compute AFs:    
+        if cfg['projecting']['project_AFs']:
+            output = []
+            for yr in target_years:
+                z_fut,AF = compute_AF(f_,z_hist,slr.sel(locations=int(site_id)).sel(years=yr).sea_level_change.values,refFreq)
+
+                output_ds = xr.Dataset(data_vars=dict(z_fut=(["qnt",'f'], np.quantile(z_fut,q=out_qnts,axis=-1)),AF=(["qnt"],np.quantile(AF,out_qnts))),
+                        coords=dict(f=(["f"], f),qnt=(["qnt"], out_qnts),year=yr,site=site_id,),)
+                output.append(output_ds)
+                
+            site_AFs = xr.concat(output,dim='year')
+            site_AFs['refFreq'] = ([],refFreq)
+     
+        #compute AF timing
+        if cfg['projecting']['project_AF_timing']: #if projecting timing of AFs
             
-        #if AF='futFreq'
-        #AF = futFreq/refFreq or AF
+            
+            annual_slr = slr.sel(locations=int(site_id)).interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic') #interpolate SLR to annual timesteps
+            
+            if 'target_AFs' in settings:
+                output = []
+                
+                target_AFs = np.array(str(settings['target_AFs']).split(',')).astype('float')
+                
+                for target_AF in target_AFs:
+                    timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_AF)
+                    
+                    output_ds = xr.Dataset(data_vars=dict(af_timing=(["qnt"],np.quantile(timing,q=out_qnts,axis=-1).astype('int'))),
+                            coords=dict(qnt=(["qnt"], out_qnts),target_AF=target_AF,site=site_id,),)
+                    output.append(output_ds)
+                af_timing = xr.concat(output,dim='target_AF')
+                
+            if 'target_freqs' in settings:
+                output = []
+                
+                target_freqs = np.array(str(settings['target_freqs']).split(',')).astype('float')
+            
+                for target_freq in target_freqs:
+                    timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_freq/refFreq)
+                    
+                    output_ds = xr.Dataset(data_vars=dict(freq_timing=(["qnt"],np.quantile(timing,q=out_qnts,axis=-1).astype('int'))),
+                            coords=dict(qnt=(["qnt"], out_qnts),target_f=target_freq,site=site_id,),)
+            
+                    output.append(output_ds)
+                freq_timing = xr.concat(output,dim='target_f')
+            
+            site_timing = xr.merge((af_timing,freq_timing))
+            site_timing['refFreq'] = ([],refFreq)
         
-        timing = compute_AF_timing(f_,z_hist,annual_slr.sel(locations=int(site_id)).sea_level_change,refFreq,AF=.1) #AF=10, should set this in cfg, also have option to go to certain frequency? 1e1 for example
+        if cfg['projecting']['project_AFs'] & cfg['projecting']['project_AF_timing']:
+            sites_output.append(xr.merge((site_AFs,site_timing)))
+        elif cfg['projecting']['project_AFs'] & ~cfg['projecting']['project_AF_timing']:
+            sites_output.append(site_AFs)
+        else:
+            sites_output.append(site_timing)
+        i+=1
         
-        
-        #np.quantile(timing,out_qnts)
-        
-        #to-do: store outputs in a good way
-        
-    
-'''   
-slr.interp(years=np.arange(yr_ref,2151),method='quadratic')
-timing = compute_AF_timing(f,z_hist,slr,refFreq,AF=10) #AF=10, should set this in cfg, also have option to go to certain frequency? 1e1 for example
-
-#compute_AF_timing(f,z_hist,slr,refFreq,AF):
-i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
-i_ref_AF = np.argmin(np.abs(f-refFreq*10))
-
-#f = np.repeat(f[:,None],len(slr),axis=1)
-if (z_hist.ndim == 1):
-    
-    if np.isscalar(slr)==False:
-        z_hist = np.repeat(z_hist[:,None],len(slr),axis=1)
-
-req_slr = z_hist[i_ref] - z_hist[i_ref_AF]
-
-#do quadratic interpolation to get years between decades
-
-#try to vectorize this?
-slr_minus_required = slr.sel(locations=int(site_id)).sea_level_change.values-np.repeat(req_slr[:,np.newaxis],len(slr.years),axis=1)
-slr_minus_required[slr_minus_required<0] = 999
-imin = np.nanargmin(slr_minus_required,axis=-1)
-
-timing = slr.years[imin]
-
-timing[timing==slr.years[-1]] = np.nan #end of timeseries or later -> cannot evaluate timing
-#if imin=last index of SLR, set to nan
-'''
+    output_ds = xr.concat(sites_output,dim='site')
+    output_ds = output_ds.assign_coords({'lat':slr.lat.sel(locations=output_ds.site),'lon':slr.lon.sel(locations=output_ds.site)})
+    output_ds.attrs['config'] = cfg
+    output_ds.to_netcdf(os.path.join(cfg['output']['output_dir'],'esl_projections.nc'),mode='w')
