@@ -25,4 +25,4 @@ def compute_AF(f,z_hist,slr,refFreq):
     
     AF = f[iRefZ_hist_in_z_fut]/refFreq #divide future frequency correspondong to refZ_hist by historical reference frequency
 
-    return z_hist,z_fut,AF
+    return z_fut,AF
