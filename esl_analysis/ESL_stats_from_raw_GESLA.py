@@ -1,8 +1,9 @@
 import numpy as np
 import numpy.matlib
+import os
 import sys
-sys.path.insert(1, '/Users/timhermans/Documents/GitHub/projectESL/data_preprocessing')
-sys.path.insert(2, '/Users/timhermans/Documents/GitHub/projectESL/esl_analysis')
+sys.path.insert(1, '.../data_preprocessing')
+
 from utils import mindist
 from open_GESLA import extract_GESLA2_locations, extract_GESLA3_locations, open_GESLA2_files, open_GESLA3_files
 from preprocess_GESLA import detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
@@ -10,19 +11,13 @@ from analyze_GESLA_ESLs import pot_extremes_from_gesla_dfs, fit_gpd_to_gesla_ext
 
 def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
         
-    min_yrs = cfg['esl']['preproc']['input_min_yrs']
-    deseasonalize = cfg['esl']['preproc']['deseasonalize']
-    detrend = cfg['esl']['preproc']['detrend']
-    subtract_amean = cfg['esl']['preproc']['subtract_amean']
-    extremes_threshold=cfg['esl']['extremes_threshold']
-    declus_window = cfg['esl']['declus_window']
-    source=cfg['esl']['input_source']
-    
+    settings = cfg['esl_analysis']['preproc_settings']
+
     #get GESLA locations
-    if source == 'gesla2':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations('/Users/timhermans/Documents/GitHub/projectESL/GESLA2')#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
-    elif source == 'gesla3':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations('/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3_ALL.csv')
+    if cfg['esl_analysis']['input_source'].lower() == 'gesla2':
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['esl_analysis']['input_dir'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
+    elif cfg['esl_analysis']['input_source'].lower() == 'gesla3':
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3_ALL.csv'))
     else:
         raise Exception('Data source not recognized.')
     
@@ -40,12 +35,11 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     if not matched_filenames:
         raise Exception("No matches found within {} degrees for provided lat/lon list".format(maxdist))
       
-    # Initialize station data dictionary to hold matched location data
-    	
     # Initialize variables to track the files that have been tested
     pass_files = {}
     fail_files = []
     esl_statistics = {}	
+    
     # Loop over the matched files
     for i in np.arange(len(sites_with_esl)): #loop over sea-level projection sites with matched ESL data
     		
@@ -69,23 +63,23 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
             # This esl file has not been tested yet, try to analyze it
             try:
                 #this tide gauge data
-                if source == 'gesla2':
-                    dfs = open_GESLA2_files('/Users/timhermans/Documents/GitHub/projectESL/GESLA2',
-                                        'H_mean',min_yrs=min_yrs,fns=[esl_file])
+                if cfg['esl_analysis']['input_source'].lower() == 'gesla2':
+                    dfs = open_GESLA2_files(cfg['esl_analysis']['input_dir'],
+                                        settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
-                elif source == 'gesla3':
-                    dfs = open_GESLA3_files('/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3.0_ALL','/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3_ALL.csv',
-                                        types=['Coastal'],resample_freq = 'D_max',min_yrs = min_yrs,fns=[esl_file])
+                elif cfg['esl_analysis']['input_source'].lower() == 'gesla3':
+                    dfs = open_GESLA3_files(os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3.0_ALL'),os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3_ALL.csv'),
+                                            ['Coastal'],settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
                 #preproc options:
-                if detrend:
+                if settings['detrend']:
                     dfs = detrend_gesla_dfs(dfs)
-                if deseasonalize:
+                if settings['deseasonalize']:
                     dfs = deseasonalize_gesla_dfs(dfs)
-                if subtract_amean:
+                if settings['subtract_amean']:
                     dfs = subtract_amean_from_gesla_dfs(dfs)
     
-                extremes = pot_extremes_from_gesla_dfs(dfs,extremes_threshold,declus_method='iterative_descending',declus_window=declus_window)
+                extremes = pot_extremes_from_gesla_dfs(dfs,settings['extremes_threshold'],settings['declus_method'],settings['declus_window'])
                 gpd_params = fit_gpd_to_gesla_extremes(extremes)
                 esl_statistics[this_id] = gpd_params
     			
