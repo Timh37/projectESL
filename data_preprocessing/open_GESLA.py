@@ -127,7 +127,7 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
 
 
 def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
-    print('opening GESLA3 files')
+    print('opening GESLA2 files')
     path_to_files = os.path.join(path_to_files,'') #append '/'
     if not fns:
         fns = os.listdir(path_to_files) #get filenames
