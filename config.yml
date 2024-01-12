@@ -1,14 +1,12 @@
-global-options:
+general:
     num_mc: 20000                                                               # number of monte carlo samples to use
+    sites_filename: "Fort_Hamilton_New_York_1.nc"                               # name of file with site names and coordinates at which to output results
+    project_path: '/Users/timhermans/Documents/Github/projectESL/'
     
 esl_analysis:
     input_type: 'raw'                                                           # ['raw','gpd_params','return_curves']
     input_source: 'gesla3'                                                      # ['gesla2','gesla3','COAST-RP']
-    input_dir: '/Volumes/Naamloos/PhD_Data/GESLA3'                              # [string] path to input files
-                                                                                # e.g.: 
-                                                                                    #'/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset'
-                                                                                    #'/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018'
-                                                                                    #'/Volumes/Naamloos/PhD_Data/GESLA3'
+    input_dir: '/Volumes/Naamloos/PhD_Data/GESLA3'                              # [string] path to input files, e.g.: '/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset', '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018','/Volumes/Naamloos/PhD_Data/GESLA3'
                                                                                     
     preproc_settings:                                                           # set preprocessing options if input_type: 'raw':     
         min_yrs: 20                                                                 # [int/float] minimum tide gauge length
@@ -22,10 +20,7 @@ esl_analysis:
         below_threshold: 'mhhw'                                                     # ['mhhw','Sweet','None'] how to treat events below threshold
         
 projecting:
-    slr_filename: "input/Fort_Hamilton_New_York_1.nc"
-    project_AFs: 1                                                              # [0,1] whether to project amplification factors
-    project_AF_timing: 1                                                        # [0,1] whether to project the timing of amplification factors
-    
+    slr_filename: "Fort_Hamilton_New_York_1.nc"
     projection_settings:                                                        #set projection options if project_AFs and/or project_AF_timing = 1
         refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
         target_years: 2050,2100                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections)
@@ -35,4 +30,7 @@ projecting:
 output:
     output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output'          #where to save output
     output_quantiles: .05,.5,.95                                                #which quantiles of distributions to save
-    store_esl_statistics: 1                                                     # [0,1] whether to save the results of the ESL analysis of raw esl data
+    output_AFs: 1 # [0,1] whether to project amplification factors
+    output_AF_timing: 1  # [0,1] whether to project the timing of amplification factors
+    store_RCs: 1
+    store_distParams: 1

@@ -12,8 +12,11 @@ from gesla import GeslaDataset
 import os
 from collections import defaultdict
 from tqdm import tqdm
+import numpy as np
+
 def resample_data(rawdata,resample_freq):
-    h_means = rawdata.shift(freq='30Min').resample('H').mean() #shift because some timestamps are reported as 1s before the hour
+    h_means = rawdata.resample('H').mean() # Skipna=False doesn't work
+    h_means.loc[h_means['use_flag']!=1,'sea_level'] = np.nan #set hours during which 1 or more observations are bad to nan
     h_means = h_means[np.isfinite(h_means['sea_level'])] #drop nans
     
     
@@ -107,7 +110,7 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
             continue
         
         rawdata = data[0]
-        rawdata = rawdata[rawdata['use_flag']==1] #only use data with use flag 1 (qf=0-2) (see GESLA3 documentation)
+        rawdata.loc[rawdata['use_flag']!=1,'sea_level'] = np.nan
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -162,10 +165,10 @@ def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
                 index_col=0,
             )
         
-        #remove invalid or missing data (see also GESLA2 definitions)
-        data = data[data['sea_level'] >-9.9] # remove missing data
-        data = data[data['use_flag'] == 1] # only use data with use flag 1
-        
+        #set invalid or missing data to nan (see also GESLA2 definitions)
+        data.loc[data['use_flag']!=1,'sea_level'] = np.nan
+        data.loc[data['sea_level']<=-9.9,'sea_level'] = np.nan
+
         resampled_data = resample_data(data,resample_freq)
         
         #do not include data if shorter than minimum years of observations
