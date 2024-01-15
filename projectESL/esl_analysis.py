@@ -472,3 +472,18 @@ def get_return_curve_gpd(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
         z = gpd_Z_from_F(scale,shape,loc,avg_exceed,f_)
     
     return z
+
+def get_return_curve_gumbel(f,scale,loc):
+    
+    f_=f
+    if np.isscalar(scale) == False:
+        f_ = np.transpose(np.matlib.repmat(f_,len(scale),1)) #repeat f num_mc times
+        scale    = np.matlib.repmat(scale,len(f),1) 
+        
+    z=np.nan*f_ #initialize
+    
+    #compute z from f using gpd parameters
+    
+    z = gum_amax_Z_from_F(scale,loc,f_)
+    
+    return z

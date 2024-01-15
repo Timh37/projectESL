@@ -14,7 +14,7 @@ import pandas as pd
 from utils import mindist
 import warnings
 from I_O import load_config, store_esl_params, open_slr_projections, get_refFreqs
-from esl_analysis import ESL_stats_from_raw_GESLA, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd
+from esl_analysis import ESL_stats_from_raw_GESLA, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd, get_return_curve_gumbel
 from projecting import compute_AF, compute_AF_timing
 
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
@@ -41,22 +41,63 @@ if cfg['esl_analysis']['input_type'] == 'raw': #derive GPD parameters from raw d
         store_esl_params(cfg,sites,esl_statistics)
          
 #read in pre-defined GPD parameters
-#elif cfg['esl'][input_type'] == 'gpd_params'
-#to be implemented
+elif cfg['esl_analysis']['input_type'] == 'esl_params':
+    if cfg['esl_analysis']['input_source'] == 'codec_gumbel':
+        codec_gum = xr.open_dataset('/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc')
+        min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
+        
+        for i in np.arange(len(sites.locations)):
+            if min_idx[i] is not None:
+                if np.isscalar(min_idx[i]) == False:
+                    min_idx[i] = min_idx[i][0]
+                esl_statistics[sites.locations.values[i]] = {}
+                esl_statistics[sites.locations.values[i]]['loc'] = codec_gum.isel(stations=min_idx[i]).GUM.values[0]
+                esl_statistics[sites.locations.values[i]]['scale'] = codec_gum.isel(stations=min_idx[i]).GUM.values[-1]
+            else:
+                continue
    
+    elif cfg['esl_analysis']['input_source'] == 'hermans2023_gpd':
+        gpd_params = xr.open_dataset('/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc')
+        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
+        
+        if len(gpd_params.nboot) > cfg['general']['num_mc']:
+            isamps = np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc'])
+        elif len(gpd_params.nboot) < cfg['general']['num_mc']:
+            isamps = np.hstack((gpd_params.nboot.values,np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc']-len(gpd_params.nboot))))
+        else:
+            isamps = gpd_params.nboot.values
+            
+        for i in np.arange(len(sites.locations)):
+            if min_idx[i] is not None:
+                if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
+                    min_idx[i] = min_idx[i][0]
+                esl_statistics[sites.locations.values[i]] = {}
+                esl_statistics[sites.locations.values[i]]['loc'] = gpd_params.isel(site=min_idx[i]).location.values
+                esl_statistics[sites.locations.values[i]]['avg_extr_pyear'] = gpd_params.isel(site=min_idx[i]).avg_exceed.values
+                esl_statistics[sites.locations.values[i]]['scale_samples'] = gpd_params.isel(site=min_idx[i]).scale_samples.values[isamps]
+                esl_statistics[sites.locations.values[i]]['shape_samples'] = gpd_params.isel(site=min_idx[i]).shape_samples.values[isamps]
+      
+            else:
+                continue
+            
 elif cfg['esl_analysis']['input_type'] == 'return_curves': #read in pre-defined return curves 
     if cfg['esl_analysis']['input_source'].lower() =='coast-rp':
         coast_rp_coords = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'pxyn_coastal_points.xyn'))
-        min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
+        min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
         
         for i in np.arange(len(sites.locations)):
-            this_id = str(int(coast_rp_coords.iloc[min_idx[0][0]].name))
-            rc = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'rp_full_empirical_station_'+this_id+'.pkl'))
-            rc = rc['rp'][np.isfinite(rc['rp'])]
-            
-            esl_statistics[sites.locations.values[i]] = {}
-            esl_statistics[sites.locations.values[i]]['z_hist'] = rc.index.values
-            esl_statistics[sites.locations.values[i]]['f_hist'] = 1/rc.values 
+            if min_idx[i] is not None:
+                if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
+                    min_idx[i] = min_idx[i][0]
+                this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name))
+                rc = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'rp_full_empirical_station_'+this_id+'.pkl'))
+                rc = rc['rp'][np.isfinite(rc['rp'])]
+                
+                esl_statistics[sites.locations.values[i]] = {}
+                esl_statistics[sites.locations.values[i]]['z_hist'] = rc.index.values
+                esl_statistics[sites.locations.values[i]]['f_hist'] = 1/rc.values 
+            else:
+                continue
     else:
         raise Exception('If input_type == "return_curves", "input_source" must be in ["coast-rp"].')   
         #others to be implemented
@@ -86,6 +127,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
     sites_output = []
  
     for site_id,stats in esl_statistics.items(): #for each site
+        print('Site: '+str(site_id))
         site_rcs = None
         site_AFs = None
         site_timing = None
@@ -96,9 +138,16 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
             shape = stats['shape'].iloc[0]
             
             scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,stats['cov'].iloc[0],cfg['general']['num_mc'])
-            z_hist = get_return_curve(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
+            z_hist = get_return_curve_gpd(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
             f_ = f
         
+        elif cfg['esl_analysis']['input_type'] == 'esl_params':
+            if cfg['esl_analysis']['input_source'] == 'codec_gumbel':
+                z_hist = get_return_curve_gumbel(f,stats['scale'],stats['loc'])
+                f_ = f
+            elif cfg['esl_analysis']['input_source'] == 'hermans2023_gpd':
+                z_hist = get_return_curve_gpd(f,stats['scale_samples'],stats['shape_samples'],stats['loc'],stats['avg_extr_pyear'])
+                f_ = f
         #to-do implement input type gpd params
         
         elif cfg['esl_analysis']['input_type'] == 'return_curves': #load in return curves
