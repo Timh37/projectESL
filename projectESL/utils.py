@@ -22,7 +22,6 @@ def mindist(qlat, qlon, lats, lons, limit=0.1):
 	
 	# If the minimum distance is beyond the limit, print a warning and return None
 	if(np.amin(dist) > limit):
-		print("Warning: No match for lat={0} lon={1}. Minimum distance to nearest tide gauge is {2:.4f} (limit={3}). Returning \"None\"".format(qlat, qlon, np.amin(dist), limit))
 		return(None)
 	
 	else:

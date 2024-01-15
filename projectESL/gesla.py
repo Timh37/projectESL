@@ -30,10 +30,10 @@ class GeslaDataset:
             for c in self.meta.columns
         ]
         self.meta.loc[:, "start_date_time"] = [
-            pd.to_datetime(d) for d in self.meta.loc[:, "start_date_time"]
+            pd.to_datetime(d,format='mixed') for d in self.meta.loc[:, "start_date_time"]
         ]
         self.meta.loc[:, "end_date_time"] = [
-            pd.to_datetime(d) for d in self.meta.loc[:, "end_date_time"]
+            pd.to_datetime(d,format='mixed') for d in self.meta.loc[:, "end_date_time"]
         ]
         self.data_path = data_path
         self.meta["filename"] = self.construct_filenames()

@@ -11,20 +11,20 @@ import os
 import xarray as xr
 import numpy as np
 import pandas as pd
-from utils import mindist
 import warnings
-from I_O import load_config, store_esl_params, open_slr_projections, get_refFreqs
+from I_O import load_config, store_esl_params, open_slr_projections, get_refFreqs, get_gpd_params_from_Hermans2023, get_gum_amax_from_CoDEC, get_coast_rp_return_curves
 from esl_analysis import ESL_stats_from_raw_GESLA, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd, get_return_curve_gumbel
 from projecting import compute_AF, compute_AF_timing
-
+from tqdm import tqdm
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
-#sites = xr.open_dataset(os.path.join(home_path,'input',cfg['general']['sites_filename']))
-sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
-
+sites = xr.open_dataset(os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename']))
+#sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
+sites = sites.isel(locations=np.arange(5))
+sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
 
 out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
 
-f= 10**np.linspace(-6,2,num=2001) #input frequencies to compute return heights
+f= 10**np.linspace(-6,2,num=1001) #input frequencies to compute return heights
 f=np.append(f,np.arange(101,183))
 
 
@@ -39,65 +39,19 @@ if cfg['esl_analysis']['input_type'] == 'raw': #derive GPD parameters from raw d
 
     if cfg['output']['store_distParams']:
         store_esl_params(cfg,sites,esl_statistics)
-         
+        print('Stored derived ESL parameters.')
+        
 #read in pre-defined GPD parameters
 elif cfg['esl_analysis']['input_type'] == 'esl_params':
     if cfg['esl_analysis']['input_source'] == 'codec_gumbel':
-        codec_gum = xr.open_dataset('/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc')
-        min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
-        
-        for i in np.arange(len(sites.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False:
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[sites.locations.values[i]] = {}
-                esl_statistics[sites.locations.values[i]]['loc'] = codec_gum.isel(stations=min_idx[i]).GUM.values[0]
-                esl_statistics[sites.locations.values[i]]['scale'] = codec_gum.isel(stations=min_idx[i]).GUM.values[-1]
-            else:
-                continue
-   
+        esl_statistics = get_gum_amax_from_CoDEC(cfg,'/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc',sites,esl_statistics)
+       
     elif cfg['esl_analysis']['input_source'] == 'hermans2023_gpd':
-        gpd_params = xr.open_dataset('/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc')
-        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
-        
-        if len(gpd_params.nboot) > cfg['general']['num_mc']:
-            isamps = np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc'])
-        elif len(gpd_params.nboot) < cfg['general']['num_mc']:
-            isamps = np.hstack((gpd_params.nboot.values,np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc']-len(gpd_params.nboot))))
-        else:
-            isamps = gpd_params.nboot.values
-            
-        for i in np.arange(len(sites.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[sites.locations.values[i]] = {}
-                esl_statistics[sites.locations.values[i]]['loc'] = gpd_params.isel(site=min_idx[i]).location.values
-                esl_statistics[sites.locations.values[i]]['avg_extr_pyear'] = gpd_params.isel(site=min_idx[i]).avg_exceed.values
-                esl_statistics[sites.locations.values[i]]['scale_samples'] = gpd_params.isel(site=min_idx[i]).scale_samples.values[isamps]
-                esl_statistics[sites.locations.values[i]]['shape_samples'] = gpd_params.isel(site=min_idx[i]).shape_samples.values[isamps]
-      
-            else:
-                continue
+        esl_statistics = get_gpd_params_from_Hermans2023(cfg,'/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc',sites,esl_statistics)
             
 elif cfg['esl_analysis']['input_type'] == 'return_curves': #read in pre-defined return curves 
     if cfg['esl_analysis']['input_source'].lower() =='coast-rp':
-        coast_rp_coords = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'pxyn_coastal_points.xyn'))
-        min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)][0]
-        
-        for i in np.arange(len(sites.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
-                    min_idx[i] = min_idx[i][0]
-                this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name))
-                rc = pd.read_pickle(os.path.join(cfg['esl_analysis']['input_dir'],'rp_full_empirical_station_'+this_id+'.pkl'))
-                rc = rc['rp'][np.isfinite(rc['rp'])]
-                
-                esl_statistics[sites.locations.values[i]] = {}
-                esl_statistics[sites.locations.values[i]]['z_hist'] = rc.index.values
-                esl_statistics[sites.locations.values[i]]['f_hist'] = 1/rc.values 
-            else:
-                continue
+        esl_statistics = get_coast_rp_return_curves(cfg,os.path.join(cfg['esl_analysis']['input_dir'],'pxyn_coastal_points.xyn'),sites,esl_statistics)
     else:
         raise Exception('If input_type == "return_curves", "input_source" must be in ["coast-rp"].')   
         #others to be implemented
@@ -111,8 +65,14 @@ else:
 #a. open SLR projections & get reference frequencies for AF projections
 if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] > 0 : 
     slr = open_slr_projections(cfg)
+    slr['locations'] = slr.locations.astype('str') #to use them as keys for dictionary
+
+    try:
+        slr = slr.sel(locations=list(esl_statistics.keys()))
+    except:
+        raise Exception('The provided SLR projections do not include all queried locations.')                  
     refFreqs = get_refFreqs(cfg,sites,esl_statistics)
-  
+    
     
     if cfg['output']['output_AFs']:
         target_years_ = np.array(str(cfg['projecting']['projection_settings']['target_years']).split(',')).astype('int')  #check if target_years in slr projections
@@ -125,9 +85,8 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] > 0 :
 if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output']['store_RCs'] > 0:
     i=0    
     sites_output = []
- 
-    for site_id,stats in esl_statistics.items(): #for each site
-        print('Site: '+str(site_id))
+    print('Computing results.')
+    for site_id,stats in tqdm(esl_statistics.items()): #for each site
         site_rcs = None
         site_AFs = None
         site_timing = None
@@ -174,7 +133,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                 if cfg['output']['output_AFs']: 
                     output = []
                     for yr in target_years:
-                        z_fut,AF = compute_AF(f_,z_hist,slr.sel(locations=int(site_id)).sel(years=yr).sea_level_change.values,refFreq)
+                        z_fut,AF = compute_AF(f_,z_hist,slr.sel(locations=site_id).sel(years=yr).sea_level_change.values,refFreq)
             
                         output_ds = xr.Dataset(data_vars=dict(z_fut=(["qnt",'f'], np.quantile(z_fut,q=out_qnts,axis=-1)),AF=(["qnt"],np.quantile(AF,out_qnts))),
                                 coords=dict(f=(["f"], f),qnt=(["qnt"], out_qnts),year=yr,site=site_id,),)
@@ -185,7 +144,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
              
                 #compute AF timing
                 if cfg['output']['output_AF_timing']: #if projecting timing of AFs
-                    annual_slr = slr.sel(locations=int(site_id)).interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic') #interpolate SLR to annual timesteps
+                    annual_slr = slr.sel(locations=site_id).interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic') #interpolate SLR to annual timesteps
                     
                     if 'target_AFs' in cfg['projecting']['projection_settings']:
                         output = []
@@ -217,13 +176,12 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                     site_timing = xr.merge((af_timing,freq_timing))
                     site_timing['refFreq'] = ([],refFreq)
                 
-            site_output = [k for k in [site_rcs,site_AFs,site_timing] if k!=None]
-            if site_output!=[]:
-                sites_output.append(xr.merge(site_output))
-            i+=1
-                
-        output_ds = xr.concat(sites_output,dim='site')
-        output_ds = output_ds.assign_coords({'lat':sites.lat.sel(locations=output_ds.site),'lon':sites.lon.sel(locations=output_ds.site)})
-        output_ds.attrs['config'] = str(cfg)
-        output_ds.to_netcdf(os.path.join(cfg['output']['output_dir'],'projectESL_output.nc'),mode='w')
-            
+        site_output = [k for k in [site_rcs,site_AFs,site_timing] if k!=None]
+        if site_output!=[]:
+            sites_output.append(xr.merge(site_output))
+        i+=1
+    
+    output_ds = xr.concat(sites_output,dim='site')
+    output_ds = output_ds.assign_coords({'lat':sites.lat.sel(locations=output_ds.site),'lon':sites.lon.sel(locations=output_ds.site)})
+    output_ds.attrs['config'] = str(cfg)
+    output_ds.to_netcdf(os.path.join(cfg['output']['output_dir'],'projectESL_output.nc'),mode='w')

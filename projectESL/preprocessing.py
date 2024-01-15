@@ -51,7 +51,8 @@ def readmeta_GESLA2(filename):
 def extract_GESLA2_locations(gesladir):
     # Get a list of the gesla database files
     geslafiles = os.listdir(gesladir)
-    
+    if '.DS_Store' in geslafiles:
+        geslafiles.remove('.DS_Store')
     # Initialize the station variables
     station_names = []
     station_lats = []
@@ -89,7 +90,6 @@ def get_data_starting_index(file_name):
         return i
 
 def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None):
-    print('opening GESLA3 files')
     path_to_files = os.path.join(path_to_files,'') #append '/'
     
     if not fns:
@@ -97,7 +97,7 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
     g3object = GeslaDataset(meta_file=meta_fn,data_path=path_to_files) #create dataset class
     
     datasets = {}
-    for fn in tqdm(fns):
+    for fn in fns:
         data = g3object.file_to_pandas(fn) #data [0] + metadata [1]
         
         if data[1]['gauge_type'] not in types:
@@ -126,13 +126,12 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
 
 
 def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
-    print('opening GESLA2 files')
     path_to_files = os.path.join(path_to_files,'') #append '/'
     if not fns:
         fns = os.listdir(path_to_files) #get filenames
     
     datasets = {}
-    for fn in tqdm(fns):
+    for fn in fns:
         metadata = readmeta_GESLA2(os.path.join(path_to_files,fn))
  
         if (metadata[-1] - metadata[-2])/np.timedelta64(1, 's')/(365.25*24*3600) < min_yrs:

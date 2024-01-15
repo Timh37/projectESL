@@ -4,6 +4,7 @@ import pandas as pd
 from scipy.stats import genpareto
 import os
 from utils import mindist
+from tqdm import tqdm
 from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, open_GESLA2_files, open_GESLA3_files, detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
 
 def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
@@ -22,15 +23,17 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     
     matched_filenames = []
     sites_with_esl = []
-    for i in np.arange(len(queried.locations)): #loop over sl-projection sites
+    for i in np.arange(len(queried.locations)): #loop over queried sites
         if min_idx[i] is not None: #if nearby ESL data found, try to analyze that data
     
             matched_filenames.append([station_filenames[x] for x in min_idx[i]]) #esl stations within distance to sea-level projection site
-            sites_with_esl.append(float(queried.locations[i])) #sea-level projections sites with nearby ESL data
-    
+            sites_with_esl.append(queried.locations[i].values) #sea-level projections sites with nearby ESL data
+        else:
+            print("Warning: No nearby ESL information found for {0}. Skipping site.".format(queried.locations[i].values))
+            
     # if no locations with esl data are found, quit with error
     if not matched_filenames:
-        raise Exception("No matches found within {} degrees for provided lat/lon list".format(maxdist))
+        raise Exception("Zero matches found within {} degrees for provided lat/lon list".format(maxdist))
       
     # Initialize variables to track the files that have been tested
     pass_files = {}
@@ -38,25 +41,26 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     esl_statistics = {}	
     
     # Loop over the matched files
-    for i in np.arange(len(sites_with_esl)): #loop over sea-level projection sites with matched ESL data
+    print('Analyzing GESLA records.')
+    for i in tqdm(np.arange(len(sites_with_esl))): #loop over sea-level projection sites with matched ESL data
     		
         # This ID
-        this_id = sites_with_esl[i]
+        this_id = str(sites_with_esl[i])
         this_id_passed = False
-    		
+
         # Loop over the esl files within the match radius for this location, use the first one for which data fulfills criteria
         for esl_file in matched_filenames[i]:
-    			
+            
             # if this esl file was already tested and passed
             if np.isin(esl_file, list(pass_files.keys())):
                 print("{0} already PASSED a previous check on data constraints. Mapping site ID {1} to site ID {2}.".format(esl_file, pass_files[esl_file], this_id))
-                esl_statistics[this_id] = esl_statistics[pass_files[esl_file]]
+                esl_statistics[this_id] = esl_statistics[pass_files[str(esl_file)]]
                 this_id_passed = True
     
             # if current sea-level projectio nlocation already has esl parameters, skip to the next
             if this_id_passed:
                 continue            
-    
+            
             # This esl file has not been tested yet, try to analyze it
             try:
                 #this tide gauge data
@@ -81,19 +85,21 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
                 esl_statistics[this_id] = gpd_params
     			
                 # This file passed, add it to the pass file dictionary
-                pass_files[esl_file] = this_id
+                pass_files[str(esl_file)] = this_id
                 # This ID has data, set the flag to move onto the next ID
                 this_id_passed = True
     			
             except:
                 # This file failed, add it to the fail list and continue with the next file
-                print("{} did not pass the data constraints. Moving on to the next file.".format(esl_file))
-                fail_files.append(esl_file)
+                fail_files.append(str(esl_file))
                 continue
     
         # Let the user know we didn't find a file that passes the data constraints
         if not this_id_passed:
             print("No locations within {0} degrees pass the data constraints for ID {1}.".format(maxdist, this_id))
+        
+    if len(esl_statistics) == 0:
+        raise Exception('Did not find any nearby records passing the data constraints.')
     return esl_statistics
 
 def pot_extremes_from_gesla_dfs(dfs,threshold_pct,declus_method=None,declus_window=None):
@@ -318,7 +324,7 @@ def gpd_Z_from_F(scale,shape,loc,avg_exceed,f):
             z = scale/shape * (np.power( (f/avg_exceed), (shape/-1)) -1 ) #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
             
     else: #if array input
-        if np.any(shape)==0:
+        if np.any(shape==0):
             z[shape==0] = -scale[shape==0] * np.log(f[shape==0]/avg_exceed)
             z[shape!=0] = scale[shape!=0]/shape[shape!=0] * (np.power( (f[shape!=0]/avg_exceed), (shape[shape!=0]/-1)) -1 )   
         else:
@@ -365,7 +371,7 @@ def gpd_Z_from_F_mhhw(scale,shape,loc,avg_exceed,f,mhhw):
             z = scale/shape * (np.power( (f/avg_exceed), (shape/-1)) -1 ) #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
             
     else: #if array input
-        if np.any(shape)==0:
+        if np.any(shape==0):
             z[shape==0] = -scale[shape==0] * np.log(f[shape==0]/avg_exceed)
             z[shape!=0] = scale[shape!=0]/shape[shape!=0] * (np.power( (f[shape!=0]/avg_exceed), (shape[shape!=0]/-1)) -1 )   
         else:
@@ -416,7 +422,7 @@ def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
             z = scale/shape * (np.power( (f/avg_exceed), (shape/-1)) -1 ) #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
             
     else: #if array input
-        if np.any(shape)==0:
+        if np.any(shape==0):
             z[shape==0] = -scale[shape==0] * np.log(f[shape==0]/avg_exceed)
             z[shape!=0] = scale[shape!=0]/shape[shape!=0] * (np.power( (f[shape!=0]/avg_exceed), (shape[shape!=0]/-1)) -1 )   
         else:
@@ -455,9 +461,9 @@ def get_return_curve_gpd(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
     
     f_=f
     if np.isscalar(scale) == False:
-        f_ = np.transpose(np.matlib.repmat(f_,len(scale),1)) #repeat f num_mc times
-        scale    = np.matlib.repmat(scale,len(f),1) 
-        shape    = np.matlib.repmat(shape,len(f),1)
+        f_ = np.repeat(f_[:,np.newaxis],len(scale),axis=1) #repeat f num_mc times
+        scale = np.repeat(scale[np.newaxis,:],len(f),0)
+        shape = np.repeat(shape[np.newaxis,:],len(f),0)
         
     z=np.nan*f_ #initialize
     
@@ -477,8 +483,8 @@ def get_return_curve_gumbel(f,scale,loc):
     
     f_=f
     if np.isscalar(scale) == False:
-        f_ = np.transpose(np.matlib.repmat(f_,len(scale),1)) #repeat f num_mc times
-        scale    = np.matlib.repmat(scale,len(f),1) 
+        f_ = np.repeat(f_[:,np.newaxis],len(scale),axis=1) #repeat f num_mc times
+        scale = np.repeat(scale[np.newaxis,:],len(f),0) 
         
     z=np.nan*f_ #initialize
     
