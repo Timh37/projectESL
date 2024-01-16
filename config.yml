@@ -1,36 +1,53 @@
 general:
-    num_mc: 20000                                                               # number of monte carlo samples to use
-    sites_filename: "Fort_Hamilton_New_York_1.nc"                               # name of file with site names and coordinates at which to output results
-    project_path: '/Users/timhermans/Documents/Github/projectESL/'
+    num_mc: 5000                                                                # number of monte carlo samples to use
     
-esl_analysis:
-    input_type: 'raw'                                                           # ['raw','gpd_params','return_curves']
-    input_source: 'gesla3'                                                      # ['gesla2','gesla3','COAST-RP']
-    input_dir: '/Volumes/Naamloos/PhD_Data/GESLA3'                              # [string] path to input files, e.g.: '/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset', '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018','/Volumes/Naamloos/PhD_Data/GESLA3'
-                                                                                    
-    preproc_settings:                                                           # set preprocessing options if input_type: 'raw':     
-        min_yrs: 20                                                                 # [int/float] minimum tide gauge length
-        resample_freq: 'D_max'                                                      # ['H_mean', 'D_mean','D_max']
-        deseasonalize: 1                                                            # [0,1] whether to deseasonalize raw data prior to estimating ESL distribution
-        detrend: 1                                                                  # [0,1] whether to detrend raw data prior to estimating ESL distribution
-        subtract_amean: 0                                                           # [0,1] whether to subtract annual means of raw data prior to estimating ESL distribution
-        declus_method: 'iterative_descending'                                       # ['iterative_descending','rolling_max'] how to decluster the extremes
-        declus_window: 3                                                            # [int] declustering window length to use
-        extremes_threshold: 99                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
-        below_threshold: 'mhhw'                                                     # ['mhhw','Sweet','None'] how to treat events below threshold
+input:
+    input_type: 'esl_params'                                                    # ['raw','esl_params','return_curves']
+    input_source: 'hermans2023'                                                 # ['gesla2','gesla3'];['codec_gumbel','vousdoukas2018','kirezci2020','hermans2023'];['coast_rp']
+    paths:                                                                      # [string] paths to input files (only need to set those that you want to use)
+        #raw
+        gesla2: '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018'     
+        gesla3: '/Volumes/Naamloos/PhD_Data/GESLA3'                                                             
+        
+        #esl_params    
+        codec_gumbel: '/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc'
+        vousdoukas2018: '/Users/timhermans/Documents/Data/Vousdoukas18/Historical_ERA-INTERIM_wl.nc'
+        kireczi2020: '/Users/timhermans/Documents/Github/projectESL/input/kirezci2020_gpd.csv'
+        hermans2023: '/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc'
+        
+        #return_curves
+        coast_rp: '/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset'
+        
+        #refFreqs (paths to reference frequencies used for amplification factors)
+        diva: '/Users/timhermans/Documents/Data/DIVA/cls.gpkg'
+        flopros: '/Users/timhermans/Documents/Data/FLOPROS/Tiggeloven/'
+        
+        #general (at which sites to do the analysis & SLR projections at these sites (locations in sites must also be in slr if doing projections))
+        sites:  '/Users/timhermans/Documents/Github/projectESL/input/test_sites.nc'   
+        slr: '/Users/timhermans/Documents/Github/projectESL/input/test_slr.nc'   
+                                                                             
+preprocessing:                                                           # set preprocessing options for timeseries analysis (used if input_type='raw'):     
+    min_yrs: 20                                                                 # [int/float] minimum tide gauge length
+    resample_freq: 'D_max'                                                      # ['H_mean', 'D_mean','D_max']
+    deseasonalize: 1                                                            # [0,1] whether to deseasonalize raw data prior to estimating ESL distribution
+    detrend: 1                                                                  # [0,1] whether to detrend raw data prior to estimating ESL distribution
+    subtract_amean: 0                                                           # [0,1] whether to subtract annual means of raw data prior to estimating ESL distribution
+    declus_method: 'rolling_max'                                                # ['iterative_descending','rolling_max'] how to decluster the extremes
+    declus_window: 3                                                            # [int] declustering window length to use
+    extremes_threshold: 99                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
+    below_threshold: 'mhhw'                                                     # ['mhhw','Sweet','None'] how to treat events below threshold
         
 projecting:
-    slr_filename: "Fort_Hamilton_New_York_1.nc"
-    projection_settings:                                                        #set projection options if project_AFs and/or project_AF_timing = 1
-        refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
-        target_years: 2050,2100                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections)
-        target_AFs: 10,100                                                          # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for
-        target_freqs: 0.1,1                                                         # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for
+    refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
+    target_years: 2050,2100                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections)
+    target_AFs: 10,100                                                          # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for
+    target_freqs: 0.1,1                                                         # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for
 
 output:
-    output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output'          #where to save output
-    output_quantiles: .05,.5,.95                                                #which quantiles of distributions to save
-    output_AFs: 1 # [0,1] whether to project amplification factors
-    output_AF_timing: 1  # [0,1] whether to project the timing of amplification factors
-    store_RCs: 1
-    store_distParams: 1
+    output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output'          #where to save the output
+    output_quantiles: .05,.5,.95                                                #which quantiles of sample distributions to save
+    store_distParams: 1                                                         # [0,1] whether to store ESL parameters estimated from raw timeseries
+    store_RCs: 1                                                                # [0,1] whether to store return curves derived from input data
+    output_AFs: 1                                                               # [0,1] whether to project amplification factors
+    output_AF_timing: 1                                                         # [0,1] whether to project the timing of amplification factors
+    
