@@ -9,13 +9,13 @@ from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, op
 
 def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
         
-    settings = cfg['esl_analysis']['preproc_settings']
+    settings = cfg['preprocessing']
 
     #get GESLA locations
-    if cfg['esl_analysis']['input_source'].lower() == 'gesla2':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['esl_analysis']['input_dir'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
-    elif cfg['esl_analysis']['input_source'].lower() == 'gesla3':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3_ALL.csv'))
+    if cfg['input']['input_source'].lower() == 'gesla2':
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['input']['input_dir'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
+    elif cfg['input']['input_source'].lower() == 'gesla3':
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['input']['input_dir'],'GESLA3_ALL.csv'))
     else:
         raise Exception('Data source not recognized.')
     
@@ -64,12 +64,12 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
             # This esl file has not been tested yet, try to analyze it
             try:
                 #this tide gauge data
-                if cfg['esl_analysis']['input_source'].lower() == 'gesla2':
-                    dfs = open_GESLA2_files(cfg['esl_analysis']['input_dir'],
+                if cfg['input']['input_source'].lower() == 'gesla2':
+                    dfs = open_GESLA2_files(cfg['input']['input_dir'],
                                         settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
-                elif cfg['esl_analysis']['input_source'].lower() == 'gesla3':
-                    dfs = open_GESLA3_files(os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3.0_ALL'),os.path.join(cfg['esl_analysis']['input_dir'],'GESLA3_ALL.csv'),
+                elif cfg['input']['input_source'].lower() == 'gesla3':
+                    dfs = open_GESLA3_files(os.path.join(cfg['input']['input_dir'],'GESLA3.0_ALL'),os.path.join(cfg['input']['input_dir'],'GESLA3_ALL.csv'),
                                             ['Coastal'],settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
                 #preproc options:
@@ -270,6 +270,9 @@ def gplike(shape,scale,data):
         acov = [[nH22, -nH12], [-nH12, nH11]] / (nH11*nH22 - nH12*nH12)
     
     return nlogL,acov
+
+def infer_avg_extr_pyear(loc,scale,shape,rz,rf):
+    return rf/np.power((1+(shape*(rz-loc)/scale)),(-1/shape))
 
 def multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n,seed=None):
     if seed:

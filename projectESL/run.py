@@ -12,14 +12,15 @@ import xarray as xr
 import numpy as np
 import pandas as pd
 import warnings
-from I_O import load_config, store_esl_params, open_slr_projections, get_refFreqs, get_gpd_params_from_Hermans2023, get_gum_amax_from_CoDEC, get_coast_rp_return_curves
+from I_O import load_config, store_esl_params, open_slr_projections, get_refFreqs
+from I_O import get_gpd_params_from_Hermans2023,get_gpd_params_from_Kirezci2020, get_gpd_params_from_Vousdoukas2018, get_gum_amax_from_CoDEC, get_coast_rp_return_curves
 from esl_analysis import ESL_stats_from_raw_GESLA, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd, get_return_curve_gumbel
 from projecting import compute_AF, compute_AF_timing
 from tqdm import tqdm
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
-sites = xr.open_dataset(os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename']))
+sites = xr.open_dataset(cfg['input']['paths']['sites'])
 #sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
-sites = sites.isel(locations=np.arange(5))
+sites = sites.isel(locations=np.arange(1))
 sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
 
 out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
@@ -31,8 +32,8 @@ f=np.append(f,np.arange(101,183))
 #### 1. Get ESL information at sites
 esl_statistics = {} #initialize dictionary
 
-if cfg['esl_analysis']['input_type'] == 'raw': #derive GPD parameters from raw data
-    if cfg['esl_analysis']['input_source'].lower() in ['gesla2','gesla3']: #if using raw data from GESLA
+if cfg['input']['input_type'] == 'raw': #derive GPD parameters from raw data
+    if cfg['input']['input_source'].lower() in ['gesla2','gesla3']: #if using raw data from GESLA
         esl_statistics = ESL_stats_from_raw_GESLA(sites,cfg,0.1)
     else:
         raise Exception('If input_type == "raw", "input_source" must be in ["gesla2","gesla3"].')
@@ -42,16 +43,22 @@ if cfg['esl_analysis']['input_type'] == 'raw': #derive GPD parameters from raw d
         print('Stored derived ESL parameters.')
         
 #read in pre-defined GPD parameters
-elif cfg['esl_analysis']['input_type'] == 'esl_params':
-    if cfg['esl_analysis']['input_source'] == 'codec_gumbel':
-        esl_statistics = get_gum_amax_from_CoDEC(cfg,'/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc',sites,esl_statistics)
+elif cfg['input']['input_type'] == 'esl_params':
+    if cfg['input']['input_source'] == 'codec_gumbel':
+        esl_statistics = get_gum_amax_from_CoDEC(cfg,sites,esl_statistics)
        
-    elif cfg['esl_analysis']['input_source'] == 'hermans2023_gpd':
-        esl_statistics = get_gpd_params_from_Hermans2023(cfg,'/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc',sites,esl_statistics)
-            
-elif cfg['esl_analysis']['input_type'] == 'return_curves': #read in pre-defined return curves 
-    if cfg['esl_analysis']['input_source'].lower() =='coast-rp':
-        esl_statistics = get_coast_rp_return_curves(cfg,os.path.join(cfg['esl_analysis']['input_dir'],'pxyn_coastal_points.xyn'),sites,esl_statistics)
+    elif cfg['input']['input_source'] == 'hermans2023':
+        esl_statistics = get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics)
+    
+    elif cfg['input']['input_source'] == 'kirezci2020':    
+        esl_statistics = get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics)
+    
+    elif cfg['input']['input_source'] == 'vousdoukas2018':    
+        esl_statistics = get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics)
+        
+elif cfg['input']['input_type'] == 'return_curves': #read in pre-defined return curves 
+    if cfg['input']['input_source'].lower() =='coast-rp':
+        esl_statistics = get_coast_rp_return_curves(cfg,sites,esl_statistics)
     else:
         raise Exception('If input_type == "return_curves", "input_source" must be in ["coast-rp"].')   
         #others to be implemented
@@ -75,7 +82,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] > 0 :
     
     
     if cfg['output']['output_AFs']:
-        target_years_ = np.array(str(cfg['projecting']['projection_settings']['target_years']).split(',')).astype('int')  #check if target_years in slr projections
+        target_years_ = np.array(str(cfg['projecting']['target_years']).split(',')).astype('int')  #check if target_years in slr projections
         target_years = np.intersect1d(target_years_,slr.years)
         
         if len(target_years)!=len(target_years_):
@@ -92,7 +99,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
         site_timing = None
         
         #compute/get return curves
-        if cfg['esl_analysis']['input_type'] == 'raw': #generate return curves
+        if cfg['input']['input_type'] == 'raw': #generate return curves
             scale = stats['scale'].iloc[0]
             shape = stats['shape'].iloc[0]
             
@@ -100,16 +107,19 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
             z_hist = get_return_curve_gpd(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
             f_ = f
         
-        elif cfg['esl_analysis']['input_type'] == 'esl_params':
-            if cfg['esl_analysis']['input_source'] == 'codec_gumbel':
+        elif cfg['input']['input_type'] == 'esl_params':
+            if cfg['input']['input_source'] == 'codec_gumbel':
                 z_hist = get_return_curve_gumbel(f,stats['scale'],stats['loc'])
                 f_ = f
-            elif cfg['esl_analysis']['input_source'] == 'hermans2023_gpd':
+            elif cfg['input']['input_source'] == 'hermans2023':
                 z_hist = get_return_curve_gpd(f,stats['scale_samples'],stats['shape_samples'],stats['loc'],stats['avg_extr_pyear'])
                 f_ = f
-        #to-do implement input type gpd params
+            elif cfg['input']['input_source'] == 'kirezci2020' or cfg['esl_analysis']['input_source'] == 'vousdoukas2018':
+                z_hist = get_return_curve_gpd(f,stats['scale'],stats['shape'],stats['loc'],stats['avg_extr_pyear'])
+                f_ = f
         
-        elif cfg['esl_analysis']['input_type'] == 'return_curves': #load in return curves
+        
+        elif cfg['input']['input_type'] == 'return_curves': #load in return curves
             z_hist = stats['z_hist']
             f_ = stats['f_hist']
         
@@ -126,7 +136,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
             refFreq = refFreqs[i] #get reference frequency for this site
             
             if ~np.isfinite(refFreq):
-                print(cfg['projecting']['projection_settings']['refFreqs']+' protection standard unavailable for site: '+site_id+', moving on to next site.')
+                print(cfg['projecting']['refFreqs']+' protection standard unavailable for site: '+site_id+', moving on to next site.')
             else:
                 
                 #compute AFs:  
@@ -146,10 +156,10 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                 if cfg['output']['output_AF_timing']: #if projecting timing of AFs
                     annual_slr = slr.sel(locations=site_id).interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic') #interpolate SLR to annual timesteps
                     
-                    if 'target_AFs' in cfg['projecting']['projection_settings']:
+                    if 'target_AFs' in cfg['projecting']:
                         output = []
                         
-                        target_AFs = np.array(str(cfg['projecting']['projection_settings']['target_AFs']).split(',')).astype('float')
+                        target_AFs = np.array(str(cfg['projecting']['target_AFs']).split(',')).astype('float')
                         
                         for target_AF in target_AFs:
                             timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_AF)
@@ -159,10 +169,10 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                             output.append(output_ds)
                         af_timing = xr.concat(output,dim='target_AF')
                         
-                    if 'target_freqs' in cfg['projecting']['projection_settings']:
+                    if 'target_freqs' in cfg['projecting']:
                         output = []
                         
-                        target_freqs = np.array(str(cfg['projecting']['projection_settings']['target_freqs']).split(',')).astype('float')
+                        target_freqs = np.array(str(cfg['projecting']['target_freqs']).split(',')).astype('float')
                     
                         for target_freq in target_freqs:
                             timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_freq/refFreq)

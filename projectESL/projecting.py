@@ -29,16 +29,19 @@ def compute_AF(f,z_hist,slr,refFreq):
     return z_fut,AF
 
 def compute_AF_timing(f,z_hist,slr,refFreq,AF):
-    assert AF>1
+
+    if AF<=1:
+        timing = np.zeros(len(slr.samples)) -1
+        print("Warning: AF>=1; returning projected timing = -1.")
+        return timing
     
     i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
     i_ref_AF = np.argmin(np.abs(f-refFreq*AF)) #find index of f closest to AF * refFreq
 
     if (z_hist.ndim == 1):
-        
-        if np.isscalar(slr)==False:
-            z_hist = np.repeat(z_hist[:,None],len(slr),axis=1)
-
+        z_hist = np.repeat(z_hist[:,None],len(slr.samples),axis=1)
+ 
+    
     req_slr = z_hist[i_ref] - z_hist[i_ref_AF] #sea-level rise required to go from refFreq to AF*refFreq
     
     #find first year in which SLR > required SLR
@@ -49,8 +52,9 @@ def compute_AF_timing(f,z_hist,slr,refFreq,AF):
         imin = np.nanargmin(slr_minus_required,axis=-1)
         timing = slr.years.values[imin]
     except: #if encountering all nan slice, req_slr is nan because i_ref/i_ref_AF is not supported in z_hist
-        timing = np.zeros(np.shape(slr_minus_required[0,:])) -1
+        timing = np.zeros(len(slr.samples)) - 1
         print("Warning: Could not compute required SLR from historical return curve for refFreq={0} and AF={1}; returning projected timing = -1.".format(refFreq,AF))
+        return timing
     
     try:
         timing[timing==slr.years.values[-1]] = np.nan #end of timeseries or later -> cannot evaluate timing, so set to nan
