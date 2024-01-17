@@ -2,8 +2,8 @@ general:
     num_mc: 5000                                                                # number of monte carlo samples to use
     
 input:
-    input_type: 'esl_params'                                                    # ['raw','esl_params','return_curves']
-    input_source: 'hermans2023'                                                 # ['gesla2','gesla3'];['codec_gumbel','vousdoukas2018','kirezci2020','hermans2023'];['coast_rp']
+    input_type: 'return_curves'                                                    # ['raw','esl_params','return_curves']
+    input_source: 'coast-rp'                                                 # ['gesla2','gesla3'];['codec_gumbel','vousdoukas2018','kirezci2020','hermans2023'];['coast_rp']
     paths:                                                                      # [string] paths to input files (only need to set those that you want to use)
         #raw
         gesla2: '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018'     
@@ -12,11 +12,11 @@ input:
         #esl_params    
         codec_gumbel: '/Users/timhermans/Documents/Data/Codec/CODEC_amax_ERA5_1979_2017_coor_mask_GUM_RPS.nc'
         vousdoukas2018: '/Users/timhermans/Documents/Data/Vousdoukas18/Historical_ERA-INTERIM_wl.nc'
-        kireczi2020: '/Users/timhermans/Documents/Github/projectESL/input/kirezci2020_gpd.csv'
+        kirezci2020: '/Users/timhermans/Documents/Github/projectESL/input/kirezci2020_gpd.csv'
         hermans2023: '/Volumes/Naamloos/PhD_Data/GESLA3/GPD_fits/gesla3_gpd_daily_max_potATS_Solari.nc'
         
         #return_curves
-        coast_rp: '/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset'
+        coast-rp: '/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset'
         
         #refFreqs (paths to reference frequencies used for amplification factors)
         diva: '/Users/timhermans/Documents/Data/DIVA/cls.gpkg'
@@ -38,7 +38,7 @@ preprocessing:                                                           # set p
     below_threshold: 'mhhw'                                                     # ['mhhw','Sweet','None'] how to treat events below threshold
         
 projecting:
-    refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
+    refFreqs: 'diva'                                                           # ['diva,'flopros', or constant] reference frequency to use for amplifications
     target_years: 2050,2100                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections)
     target_AFs: 10,100                                                          # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for
     target_freqs: 0.1,1                                                         # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for

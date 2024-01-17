@@ -74,11 +74,10 @@ def get_refFreqs(cfg,sites,esl_statistics):
         
         refFreqs = find_flopros_protection_levels(qlons,qlats,cfg['input']['paths']['flopros'],15)    
     
-    else:
-        if np.isscalar(refFreqs): #use constant reference frequency for every location
-            refFreqs = np.tile(refFreqs,len(esl_statistics))
-        else: 
-            raise Exception('Reference frequency must be "DIVA", "FLOPROS" or a constant.')
+    elif np.isscalar(settings['refFreqs']): #use constant reference frequency for every location
+            refFreqs = np.tile(settings['refFreqs'],len(esl_statistics))
+    else: 
+        raise Exception('Reference frequency must be "diva", "flopros" or a constant.')
             
     return refFreqs
 
@@ -179,7 +178,7 @@ def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
 
 
 def get_coast_rp_return_curves(cfg,sites,esl_statistics):
-    coast_rp_coords = pd.read_pickle(os.path.join(cfg['input']['paths']['coast_rp'],'pxyn_coastal_points.xyn'))
+    coast_rp_coords = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'pxyn_coastal_points.xyn'))
     min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
     
     for i in np.arange(len(sites.locations)):
@@ -187,7 +186,7 @@ def get_coast_rp_return_curves(cfg,sites,esl_statistics):
             if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
                 min_idx[i] = min_idx[i][0]
             this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name))
-            rc = pd.read_pickle(os.path.join(cfg['input']['paths']['coast_rp'],'rp_full_empirical_station_'+this_id+'.pkl'))
+            rc = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'rp_full_empirical_station_'+this_id+'.pkl'))
             rc = rc['rp'][np.isfinite(rc['rp'])]
             
             esl_statistics[sites.locations.values[i]] = {}
