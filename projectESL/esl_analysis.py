@@ -13,9 +13,9 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
 
     #get GESLA locations
     if cfg['input']['input_source'].lower() == 'gesla2':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['input']['input_dir'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['input']['paths']['gesla2'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
     elif cfg['input']['input_source'].lower() == 'gesla3':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['input']['input_dir'],'GESLA3_ALL.csv'))
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'))
     else:
         raise Exception('Data source not recognized.')
     
@@ -65,11 +65,11 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
             try:
                 #this tide gauge data
                 if cfg['input']['input_source'].lower() == 'gesla2':
-                    dfs = open_GESLA2_files(cfg['input']['input_dir'],
+                    dfs = open_GESLA2_files(cfg['input']['paths']['gesla2'],
                                         settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
                 elif cfg['input']['input_source'].lower() == 'gesla3':
-                    dfs = open_GESLA3_files(os.path.join(cfg['input']['input_dir'],'GESLA3.0_ALL'),os.path.join(cfg['input']['input_dir'],'GESLA3_ALL.csv'),
+                    dfs = open_GESLA3_files(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL'),os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'),
                                             ['Coastal'],settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
     
                 #preproc options:
