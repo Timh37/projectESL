@@ -190,8 +190,8 @@ def get_coast_rp_return_curves(cfg,sites,esl_statistics):
             rc = rc['rp'][np.isfinite(rc['rp'])]
             
             esl_statistics[sites.locations.values[i]] = {}
-            esl_statistics[sites.locations.values[i]]['z_hist'] = rc.index.values
-            esl_statistics[sites.locations.values[i]]['f_hist'] = 1/rc.values 
+            esl_statistics[sites.locations.values[i]]['z_hist'] = np.flip(rc.index.values)
+            esl_statistics[sites.locations.values[i]]['f_hist'] = np.flip(1/rc.values) 
         else:
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(sites.locations[i].values))
             continue
