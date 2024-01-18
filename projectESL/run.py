@@ -17,10 +17,12 @@ from I_O import get_gpd_params_from_Hermans2023,get_gpd_params_from_Kirezci2020,
 from esl_analysis import ESL_stats_from_raw_GESLA, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd, get_return_curve_gumbel
 from projecting import compute_AF, compute_AF_timing
 from tqdm import tqdm
+from scipy import interpolate
+
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
 sites = xr.open_dataset(cfg['input']['paths']['sites'])
 #sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
-sites = sites.isel(locations=np.arange(1))
+sites = sites.isel(locations=np.arange(2))
 sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
 
 out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
@@ -105,32 +107,27 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
             
             scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,stats['cov'].iloc[0],cfg['general']['num_mc'])
             z_hist = get_return_curve_gpd(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
-            f_ = f
-        
+      
         elif cfg['input']['input_type'] == 'esl_params':
             if cfg['input']['input_source'] == 'codec_gumbel':
                 z_hist = get_return_curve_gumbel(f,stats['scale'],stats['loc'])
-                f_ = f
+             
             elif cfg['input']['input_source'] == 'hermans2023':
                 z_hist = get_return_curve_gpd(f,stats['scale_samples'],stats['shape_samples'],stats['loc'],stats['avg_extr_pyear'])
-                f_ = f
-            elif cfg['input']['input_source'] == 'kirezci2020' or cfg['esl_analysis']['input_source'] == 'vousdoukas2018':
+
+            elif cfg['input']['input_source'] == 'kirezci2020' or cfg['input']['input_source'] == 'vousdoukas2018':
                 z_hist = get_return_curve_gpd(f,stats['scale'],stats['shape'],stats['loc'],stats['avg_extr_pyear'])
-                f_ = f
-        
-        
+
         elif cfg['input']['input_type'] == 'return_curves': #load in return curves
-            z_hist = stats['z_hist']
-            f_ = stats['f_hist']
-        
-        
+            z_hist = np.interp(f,stats['f_hist'],stats['z_hist'],left=np.nan,right=np.nan) #output original z interpolated to standard f (diffs are small)
+           
         if cfg['output']['store_RCs']: #store return cures
             if len(np.shape(z_hist))==2:
                 site_rcs = xr.Dataset(data_vars=dict(z_hist=(["qnt","f"],np.quantile(z_hist,q=out_qnts,axis=-1))),
-                        coords=dict(qnt=(["qnt"], out_qnts),f=f_,site=site_id,),)
+                        coords=dict(qnt=(["qnt"], out_qnts),f=f,site=site_id,),)
             else:
                 site_rcs = xr.Dataset(data_vars=dict(z_hist=(["f"],z_hist)),
-                        coords=dict(f=f_,site=site_id,),)
+                        coords=dict(f=f,site=site_id,),)
   
         if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] > 0:
             refFreq = refFreqs[i] #get reference frequency for this site
@@ -143,7 +140,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                 if cfg['output']['output_AFs']: 
                     output = []
                     for yr in target_years:
-                        z_fut,AF = compute_AF(f_,z_hist,slr.sel(locations=site_id).sel(years=yr).sea_level_change.values,refFreq)
+                        z_fut,AF = compute_AF(f,z_hist,slr.sel(locations=site_id).sel(years=yr).sea_level_change.values,refFreq)
             
                         output_ds = xr.Dataset(data_vars=dict(z_fut=(["qnt",'f'], np.quantile(z_fut,q=out_qnts,axis=-1)),AF=(["qnt"],np.quantile(AF,out_qnts))),
                                 coords=dict(f=(["f"], f),qnt=(["qnt"], out_qnts),year=yr,site=site_id,),)
@@ -162,7 +159,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                         target_AFs = np.array(str(cfg['projecting']['target_AFs']).split(',')).astype('float')
                         
                         for target_AF in target_AFs:
-                            timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_AF)
+                            timing = compute_AF_timing(f,z_hist,annual_slr.sea_level_change,refFreq,AF=target_AF)
                             
                             output_ds = xr.Dataset(data_vars=dict(af_timing=(["qnt"],np.quantile(timing,q=out_qnts,axis=-1).astype('int'))),
                                     coords=dict(qnt=(["qnt"], out_qnts),target_AF=target_AF,site=site_id,),)
@@ -175,7 +172,7 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                         target_freqs = np.array(str(cfg['projecting']['target_freqs']).split(',')).astype('float')
                     
                         for target_freq in target_freqs:
-                            timing = compute_AF_timing(f_,z_hist,annual_slr.sea_level_change,refFreq,AF=target_freq/refFreq)
+                            timing = compute_AF_timing(f,z_hist,annual_slr.sea_level_change,refFreq,AF=target_freq/refFreq)
                             
                             output_ds = xr.Dataset(data_vars=dict(freq_timing=(["qnt"],np.quantile(timing,q=out_qnts,axis=-1).astype('int'))),
                                     coords=dict(qnt=(["qnt"], out_qnts),target_f=target_freq,site=site_id,),)
