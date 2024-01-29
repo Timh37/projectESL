@@ -236,36 +236,26 @@ def detrend_gesla_dfs(dfs):
         lrcoefs = np.polyfit(x,y,1)
         trend = np.polyval(lrcoefs,x)
         
-        df['sea_level'] = df['sea_level'] - trend + lrcoefs[-1]
+        #df['sea_level'] = df['sea_level'] - trend + lrcoefs[-1] #subtract trend without intercept
+        df['sea_level'] = df['sea_level'] - trend + np.mean(trend) #subtract trend without changing the vertical datum (mean of timeseries)
     return detrended_dfs
 
 def deseasonalize_gesla_dfs(dfs):
     deseasonalized_dfs = deepcopy(dfs)
     for k,df in deseasonalized_dfs.items():
-        df['sea_level'] = df['sea_level'] - df.groupby(df.index.month).transform('mean')['sea_level'].astype('float64') + np.mean(df.groupby(df.index.month).mean()['sea_level'])
+
+        monthly_means_at_timesteps = df.groupby(df.index.month).transform('mean')['sea_level'].astype('float64') #contains mean of all timesteps in month for all years together at each timestep in that month
+        
+        df['sea_level'] = df['sea_level'] - monthly_means_at_timesteps + np.mean(monthly_means_at_timesteps) #subtract without changing the vertical datum (mean of timeseries)
+
     return deseasonalized_dfs
 
 def subtract_amean_from_gesla_dfs(dfs):
     dfs_no_amean = deepcopy(dfs)
     for k,df in dfs_no_amean.items():
-        df['sea_level'] = df['sea_level'] - df.groupby(df.index.year).transform('mean')['sea_level'].astype('float64')
+        annual_means_at_timesteps = df.groupby(df.index.year).transform('mean')['sea_level'].astype('float64')
+        df['sea_level'] = df['sea_level'] - annual_means_at_timesteps + np.mean(annual_means_at_timesteps)  #subtract without changing the vertical datum (mean of timeseries)
     return dfs_no_amean
-
-def subtract_msl_from_gesla_dfs(dfs,period):
-    years = period.split(',')[0]
-    y0 = years[0]
-    y1 = str(int(years[1])+1)
-    
-    dfs_relative_to_msl = deepcopy(dfs)
-    for k,df in dfs_relative_to_msl.items():
-        print(df.index.to_series())
-        msl = np.nanmean(df[df.index.to_series().between(y0,y1)]['sea_level'])
-        if np.isnan(msl):
-            print('No observations in "msl_period", could not reference to MSL.')
-            continue
-        else:
-            df['sea_level'] = df['sea_level'] - msl
-    return dfs_relative_to_msl
     
 def drop_shorter_gesla_neighbors(dfs,min_dist=3):
     filtered_dfs = deepcopy(dfs)
