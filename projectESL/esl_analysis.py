@@ -65,13 +65,12 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
             try:
                 #this tide gauge data
                 if cfg['input']['input_source'].lower() == 'gesla2':
-                    dfs = open_GESLA2_files(cfg['input']['paths']['gesla2'],
-                                        settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
+                    dfs = open_GESLA2_files(cfg,fns=[esl_file])
     
                 elif cfg['input']['input_source'].lower() == 'gesla3':
-                    dfs = open_GESLA3_files(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL'),os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'),
-                                            ['Coastal'],settings['resample_freq'],settings['min_yrs'],fns=[esl_file])
-    
+                    dfs = open_GESLA3_files(cfg,['Coastal'],fns=[esl_file])
+                    
+                ###   
                 #preproc options:
                 if settings['detrend']:
                     dfs = detrend_gesla_dfs(dfs)
@@ -79,7 +78,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
                     dfs = deseasonalize_gesla_dfs(dfs)
                 if settings['subtract_amean']:
                     dfs = subtract_amean_from_gesla_dfs(dfs)
-    
+                
                 extremes = pot_extremes_from_gesla_dfs(dfs,settings['extremes_threshold'],settings['declus_method'],settings['declus_window'])
                 gpd_params = fit_gpd_to_gesla_extremes(extremes)
                 esl_statistics[this_id] = gpd_params
@@ -274,6 +273,7 @@ def gplike(shape,scale,data):
 def infer_avg_extr_pyear(loc,scale,shape,rz,rf):
     return rf/np.power((1+(shape*(rz-loc)/scale)),(-1/shape))
 
+
 def multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n,seed=None):
     if seed:
         np.random.seed(seed)
@@ -294,7 +294,7 @@ def gum_amax_Z_from_F(scale,loc,f):
     z = 0*f #initialize z
     z = loc - np.log( -np.log(1-f) ) * scale #see Eq 3.4 in Coles; inverted from cdf formula exceedeance prob = 1-np.exp(-np.exp((location-z)/scale)
     
-    return z
+    return z 
     
 def gpd_Z_from_F(scale,shape,loc,avg_exceed,f): 
     """
@@ -322,7 +322,7 @@ def gpd_Z_from_F(scale,shape,loc,avg_exceed,f):
     
     if np.isscalar(shape): #if shape is scalar value
         if shape ==0: 
-            z = -scale * np.log(f/avg_exceed) + loc #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
+            z = -scale * np.log(f/avg_exceed) #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
         else:
             z = scale/shape * (np.power( (f/avg_exceed), (shape/-1)) -1 ) #rearranged from F = f(Z), as in e.g., Frederikse et al. (2020), Buchanan et al. (2016)
             
@@ -338,7 +338,9 @@ def gpd_Z_from_F(scale,shape,loc,avg_exceed,f):
     
     #test upper bound of GPD ((shape*z/scale)<-1)
     z = np.where((shape*z/scale)<-1,np.nan,z)
-    return z
+    
+    #return z #output relative to location parameter
+    return z + loc #output relative to vertical datum
     
 def gpd_Z_from_F_mhhw(scale,shape,loc,avg_exceed,f,mhhw): 
     """
@@ -389,7 +391,8 @@ def gpd_Z_from_F_mhhw(scale,shape,loc,avg_exceed,f,mhhw):
     #below lower bound of Gumbel?
     z = np.where(f>(365.25/2),np.nan,z) #where F>mhhwFreq, replace z by np.nan
 
-    return z
+    #return z #output relative to location parameter
+    return z + loc #output relative to vertical datum
 
 
 def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f): 
@@ -455,7 +458,8 @@ def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
             z[iXtrp] = z_0p2+np.log(f[iXtrp]/0.2) * (0-z_0p2)/np.log(avg_exceed/0.2) #log-linear similar to Gumbel
         else:
             z[iXtrp] = z_0p2[iXtrp]+np.log(f[iXtrp]/0.2) * (0-z_0p2[iXtrp])/np.log(avg_exceed/0.2)
-    return z
+    #return z #output relative to location parameter
+    return z + loc #output relative to vertical datum
 
 
 def get_return_curve_gpd(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
