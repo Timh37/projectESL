@@ -89,8 +89,14 @@ def get_data_starting_index(file_name):
                     break
         return i
 
-def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None):
+def open_GESLA3_files(cfg,types,fns=None):
+    path_to_files = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL')
     path_to_files = os.path.join(path_to_files,'') #append '/'
+    
+    meta_fn = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv')
+    
+    resample_freq = cfg['preprocessing']['resample_freq']
+    min_yrs = cfg['preprocessing']['min_yrs']
     
     if not fns:
         fns = os.listdir(path_to_files) #get filenames
@@ -107,6 +113,23 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
         
         rawdata = data[0]
         rawdata.loc[rawdata['use_flag']!=1,'sea_level'] = np.nan
+        
+        #compute MSL from raw data if referencing to MSL
+        if cfg['preprocessing']['ref_to_msl']:
+            if 'msl_period' in cfg['preprocessing']:
+                years = cfg['preprocessing']['msl_period'].split(',')
+                y0 = years[0]
+                y1 = str(int(years[1])+1)
+                
+                msl = np.nanmean(rawdata[rawdata.index.to_series().between(y0,y1)]['sea_level'])
+            else: 
+                raise Exception('Could not reference to MSL because "msl_period" is undefined.')
+            
+            if np.isnan(msl):
+                print('Warning: Could not reference observations to MSL for {0} because there are no observations available during "msl_period".'.format(fn))
+            else:
+                rawdata['sea_level'] = rawdata['sea_level'] - msl
+        
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -119,14 +142,19 @@ def open_GESLA3_files(path_to_files,meta_fn,types,resample_freq,min_yrs,fns=None
             resampled_data.attrs[k] = v
         #datasets.append(resampled_data.drop(columns=['qc_flag','use_flag']))
         datasets[fn] = resampled_data.drop(columns=['qc_flag','use_flag'])
-    
+
     if len(datasets)==0:
         raise Exception('0 records exceeding record length requirement.')    
     return datasets
 
 
-def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
+def open_GESLA2_files(cfg,fns=None):
+    path_to_files = cfg['input']['paths']['gesla2']
     path_to_files = os.path.join(path_to_files,'') #append '/'
+    
+    resample_freq = cfg['preprocessing']['resample_freq']
+    min_yrs = cfg['preprocessing']['min_yrs']
+    
     if not fns:
         fns = os.listdir(path_to_files) #get filenames
     
@@ -163,7 +191,23 @@ def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
         #set invalid or missing data to nan (see also GESLA2 definitions)
         data.loc[data['use_flag']!=1,'sea_level'] = np.nan
         data.loc[data['sea_level']<=-9.9,'sea_level'] = np.nan
-
+        
+        #compute MSL from raw data if referencing to MSL
+        if cfg['preprocessing']['ref_to_msl']:
+            if 'msl_period' in cfg['preprocessing']:
+                years = cfg['preprocessing']['msl_period'].split(',')
+                y0 = years[0]
+                y1 = str(int(years[1])+1)
+                
+                msl = np.nanmean(data[data.index.to_series().between(y0,y1)]['sea_level'])
+            else: 
+                raise Exception('Could not reference to MSL because "msl_period" is undefined.')
+            
+            if np.isnan(msl):
+                print('Warning: Could not reference observations to MSL for {0} because there are no observations available during "msl_period".'.format(fn))
+            else:
+                data['sea_level'] = data['sea_level'] - msl
+            
         resampled_data = resample_data(data,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -171,7 +215,6 @@ def open_GESLA2_files(path_to_files,resample_freq,min_yrs,fns=None):
             continue
         if (('D' in resample_freq) & (len(resampled_data)/365.25 < min_yrs)):
             continue
-        
         
         resampled_data.attrs['file_name'] = fn
         resampled_data.attrs['site_name'] = metadata[0]
@@ -208,6 +251,21 @@ def subtract_amean_from_gesla_dfs(dfs):
         df['sea_level'] = df['sea_level'] - df.groupby(df.index.year).transform('mean')['sea_level'].astype('float64')
     return dfs_no_amean
 
+def subtract_msl_from_gesla_dfs(dfs,period):
+    years = period.split(',')[0]
+    y0 = years[0]
+    y1 = str(int(years[1])+1)
+    
+    dfs_relative_to_msl = deepcopy(dfs)
+    for k,df in dfs_relative_to_msl.items():
+        print(df.index.to_series())
+        msl = np.nanmean(df[df.index.to_series().between(y0,y1)]['sea_level'])
+        if np.isnan(msl):
+            print('No observations in "msl_period", could not reference to MSL.')
+            continue
+        else:
+            df['sea_level'] = df['sea_level'] - msl
+    return dfs_relative_to_msl
     
 def drop_shorter_gesla_neighbors(dfs,min_dist=3):
     filtered_dfs = deepcopy(dfs)

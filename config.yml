@@ -2,8 +2,8 @@ general:
     num_mc: 5000                                                                # number of monte carlo samples to use
     
 input:
-    input_type: 'return_curves'                                                    # ['raw','esl_params','return_curves']
-    input_source: 'coast-rp'                                                 # ['gesla2','gesla3'];['codec_gumbel','vousdoukas2018','kirezci2020','hermans2023'];['coast_rp']
+    input_type: 'raw'                                                    # ['raw','esl_params','return_curves']
+    input_source: 'gesla3'                                                 # ['gesla2','gesla3'];['codec_gumbel','vousdoukas2018','kirezci2020','hermans2023'];['coast_rp']
     paths:                                                                      # [string] paths to input files (only need to set those that you want to use)
         #raw
         gesla2: '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018'     
@@ -29,9 +29,11 @@ input:
 preprocessing:                                                           # set preprocessing options for timeseries analysis (used if input_type='raw'):     
     min_yrs: 20                                                                 # [int/float] minimum tide gauge length
     resample_freq: 'D_max'                                                      # ['H_mean', 'D_mean','D_max']
-    deseasonalize: 1                                                            # [0,1] whether to deseasonalize raw data prior to estimating ESL distribution
+    deseasonalize: 0                                                            # [0,1] whether to deseasonalize raw data prior to estimating ESL distribution
     detrend: 1                                                                  # [0,1] whether to detrend raw data prior to estimating ESL distribution
     subtract_amean: 0                                                           # [0,1] whether to subtract annual means of raw data prior to estimating ESL distribution
+    ref_to_msl: 1                                                               # [0,1] whether to reference observations to mean sea level during defined period
+    msl_period: 1980,2014                                                       # reference period to compute MSL for, if referencing observations to MSL
     declus_method: 'rolling_max'                                                # ['iterative_descending','rolling_max'] how to decluster the extremes
     declus_window: 3                                                            # [int] declustering window length to use
     extremes_threshold: 99                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
