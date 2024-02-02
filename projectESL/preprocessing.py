@@ -112,24 +112,30 @@ def open_GESLA3_files(cfg,types,fns=None):
             continue
         
         rawdata = data[0]
+    
+        if rawdata.index[-1].year < 1980: #if record is older than 1980, skip it
+            continue
+      
         rawdata.loc[rawdata['use_flag']!=1,'sea_level'] = np.nan
-        
+  
         #compute MSL from raw data if referencing to MSL
         if cfg['preprocessing']['ref_to_msl']:
             if 'msl_period' in cfg['preprocessing']:
+                
                 years = cfg['preprocessing']['msl_period'].split(',')
                 y0 = years[0]
                 y1 = str(int(years[1])+1)
                 
-                msl = np.nanmean(rawdata[rawdata.index.to_series().between(y0,y1)]['sea_level'])
+                data_in_msl_period = rawdata[rawdata.index.to_series().between(y0,y1)]
+              
+                if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
+                    print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+                else:    
+                    msl = np.nanmean(data_in_msl_period['sea_level'])
+                    rawdata['sea_level'] = rawdata['sea_level'] - msl
             else: 
-                raise Exception('Could not reference to MSL because "msl_period" is undefined.')
-            
-            if np.isnan(msl):
-                print('Warning: Could not reference observations to MSL for {0} because there are no observations available during "msl_period".'.format(fn))
-            else:
-                rawdata['sea_level'] = rawdata['sea_level'] - msl
-        
+                raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
+
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -187,6 +193,8 @@ def open_GESLA2_files(cfg,fns=None):
                 parse_dates=[[0, 1]],
                 index_col=0,
             )
+        if data.index[-1].year < 1980: #if record is older than 1980, skip it
+            continue
         
         #set invalid or missing data to nan (see also GESLA2 definitions)
         data.loc[data['use_flag']!=1,'sea_level'] = np.nan
@@ -199,14 +207,15 @@ def open_GESLA2_files(cfg,fns=None):
                 y0 = years[0]
                 y1 = str(int(years[1])+1)
                 
-                msl = np.nanmean(data[data.index.to_series().between(y0,y1)]['sea_level'])
+                data_in_msl_period = data[data.index.to_series().between(y0,y1)]
+                
+                if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
+                    print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+                else:    
+                    msl = np.nanmean(data_in_msl_period['sea_level'])
+                    data['sea_level'] = data['sea_level'] - msl
             else: 
-                raise Exception('Could not reference to MSL because "msl_period" is undefined.')
-            
-            if np.isnan(msl):
-                print('Warning: Could not reference observations to MSL for {0} because there are no observations available during "msl_period".'.format(fn))
-            else:
-                data['sea_level'] = data['sea_level'] - msl
+                raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
             
         resampled_data = resample_data(data,resample_freq)
         
