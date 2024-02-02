@@ -102,7 +102,8 @@ def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
             esl_statistics[sites.locations.values[i]]['avg_extr_pyear'] = gpd_params.isel(site=min_idx[i]).avg_exceed.values
             esl_statistics[sites.locations.values[i]]['scale_samples'] = gpd_params.isel(site=min_idx[i]).scale_samples.values[isamps]
             esl_statistics[sites.locations.values[i]]['shape_samples'] = gpd_params.isel(site=min_idx[i]).shape_samples.values[isamps]
-  
+            esl_statistics[sites.locations.values[i]]['scale'] = gpd_params.isel(site=min_idx[i]).scale_samples.values
+            esl_statistics[sites.locations.values[i]]['shape'] = gpd_params.isel(site=min_idx[i]).shape_samples.values
         else:
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(sites.locations[i].values))
             continue
