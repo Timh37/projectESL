@@ -76,11 +76,13 @@ class GeslaDataset:
             if data.index[data.index.duplicated()].size > 0:
                 #data = data.drop_duplicates() #this removes any duplicate row, rather than duplicate timestamps
                 data = data[~data.index.duplicated(keep='first')]
+                '''
                 warnings.warn(
                     "Duplicate timestamps in file "
                     + filename
                     + " were removed.",
                 )
+                '''
             if return_meta:
                 try:
                     meta = self.meta.loc[self.meta['file_name'] == filename].iloc[0]
