@@ -22,7 +22,7 @@ from scipy import interpolate
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
 sites = xr.open_dataset(cfg['input']['paths']['sites'])
 #sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
-sites = sites.isel(locations=np.arange(2))
+sites = sites#.isel(locations=np.arange(5))
 sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
 
 out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
@@ -106,29 +106,40 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
             shape = stats['shape'].iloc[0]
             
             scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,stats['cov'].iloc[0],cfg['general']['num_mc'])
-            z_hist = get_return_curve_gpd(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0])
+            z_hist_ce       = get_return_curve_gpd(f,scale,shape,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0]) #central estimate ESL parameters
+            z_hist_samples  = get_return_curve_gpd(f,scale_samples,shape_samples,stats['loc'].iloc[0],stats['avg_extr_pyear'].iloc[0],'mhhw',stats['mhhw'].iloc[0]) #samples based on ESL parameter uncertainty
       
         elif cfg['input']['input_type'] == 'esl_params':
             if cfg['input']['input_source'] == 'codec_gumbel':
-                z_hist = get_return_curve_gumbel(f,stats['scale'],stats['loc'])
-             
+                z_hist_ce = get_return_curve_gumbel(f,stats['scale'],stats['loc'])
+                z_hist_samples = None
+                
             elif cfg['input']['input_source'] == 'hermans2023':
-                z_hist = get_return_curve_gpd(f,stats['scale_samples'],stats['shape_samples'],stats['loc'],stats['avg_extr_pyear'])
+                z_hist_ce       = get_return_curve_gpd(f,stats['scale'],stats['shape'],stats['loc'],stats['avg_extr_pyear'])
+                z_hist_samples  = get_return_curve_gpd(f,stats['scale_samples'],stats['shape_samples'],stats['loc'],stats['avg_extr_pyear'])
 
             elif cfg['input']['input_source'] == 'kirezci2020' or cfg['input']['input_source'] == 'vousdoukas2018':
-                z_hist = get_return_curve_gpd(f,stats['scale'],stats['shape'],stats['loc'],stats['avg_extr_pyear'])
-
+                z_hist_ce = get_return_curve_gpd(f,stats['scale'],stats['shape'],stats['loc'],stats['avg_extr_pyear'])
+                z_hist_samples = None
+                
         elif cfg['input']['input_type'] == 'return_curves': #load in return curves
-            z_hist = np.interp(f,stats['f_hist'],stats['z_hist'],left=np.nan,right=np.nan) #output original z interpolated to standard f (diffs are small)
-           
+            z_hist_ce = np.interp(f,stats['f_hist'],stats['z_hist'],left=np.nan,right=np.nan) #output original z interpolated to standard f (diffs are small)
+            z_hist_samples = None
+            
         if cfg['output']['store_RCs']: #store return cures
-            if len(np.shape(z_hist))==2:
-                site_rcs = xr.Dataset(data_vars=dict(z_hist=(["qnt","f"],np.quantile(z_hist,q=out_qnts,axis=-1))),
-                        coords=dict(qnt=(["qnt"], out_qnts),f=f,site=site_id,),)
-            else:
-                site_rcs = xr.Dataset(data_vars=dict(z_hist=(["f"],z_hist)),
-                        coords=dict(f=f,site=site_id,),)
-  
+           site_rcs = xr.Dataset(data_vars=dict(z_hist_ce=(["f"],z_hist_ce)),
+                   coords=dict(f=f,site=site_id,),)
+           if z_hist_samples is not None:
+               site_rcs['z_hist'] = (['qnt','f'],np.quantile(z_hist_samples,q=out_qnts,axis=-1))
+               site_rcs = site_rcs.assign_coords({'qnt':out_qnts})
+        '''
+        if len(np.shape(z_hist))==2:
+            site_rcs = xr.Dataset(data_vars=dict(z_hist=(["qnt","f"],np.quantile(z_hist,q=out_qnts,axis=-1))),
+                    coords=dict(qnt=(["qnt"], out_qnts),f=f,site=site_id,),)
+        else:
+            site_rcs = xr.Dataset(data_vars=dict(z_hist=(["f"],z_hist)),
+                    coords=dict(f=f,site=site_id,),)
+        '''
         if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] > 0:
             refFreq = refFreqs[i] #get reference frequency for this site
             
@@ -139,20 +150,35 @@ if cfg['output']['output_AFs'] + cfg['output']['output_AF_timing'] + cfg['output
                 #compute AFs:  
                 if cfg['output']['output_AFs']: 
                     output = []
+                    
+                    if z_hist_samples is not None:
+                        z_hist = z_hist_samples
+                    else:
+                        z_hist = z_hist_ce
+                        print('Warning: Computing z_fut & amplification factors without propagating uncertainty in historical return periods.')
+                    
                     for yr in target_years:
-                        z_fut,AF = compute_AF(f,z_hist,slr.sel(locations=site_id).sel(years=yr).sea_level_change.values,refFreq)
-            
-                        output_ds = xr.Dataset(data_vars=dict(z_fut=(["qnt",'f'], np.quantile(z_fut,q=out_qnts,axis=-1)),AF=(["qnt"],np.quantile(AF,out_qnts))),
+                        z_fut_samples,AF_samples,maxAF = compute_AF(f,z_hist,slr.sel(locations=site_id).sel(years=yr).sea_level_change.values,refFreq)
+                        
+                        output_ds = xr.Dataset(data_vars=dict(z_fut=(["qnt",'f'], np.quantile(z_fut_samples,q=out_qnts,axis=-1)),AF=(["qnt"],np.quantile(AF_samples,out_qnts))),
                                 coords=dict(f=(["f"], f),qnt=(["qnt"], out_qnts),year=yr,site=site_id,),)
+                         
                         output.append(output_ds)
                         
                     site_AFs = xr.concat(output,dim='year')
                     site_AFs['refFreq'] = ([],refFreq)
+                    site_AFs['maxAF'] = ([],maxAF)
              
                 #compute AF timing
                 if cfg['output']['output_AF_timing']: #if projecting timing of AFs
                     annual_slr = slr.sel(locations=site_id).interp(years=np.arange(slr.years[0],slr.years[-1]+1),method='quadratic') #interpolate SLR to annual timesteps
                     
+                    if z_hist_samples is not None:
+                        z_hist = z_hist_samples
+                    else:
+                        z_hist = z_hist_ce
+                        print('Warning: Computing z_fut & amplification factor timings without propagating uncertainty in historical return periods.')
+                        
                     if 'target_AFs' in cfg['projecting']:
                         output = []
                         
