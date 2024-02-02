@@ -11,6 +11,7 @@ import warnings
 
 def compute_AF(f,z_hist,slr,refFreq):
     i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
+    i_z_min = np.nanargmin(z_hist,axis=0)[0]
     #f = np.repeat(f[:,None],len(slr),axis=1)
     if (z_hist.ndim == 1):
         
@@ -22,11 +23,12 @@ def compute_AF(f,z_hist,slr,refFreq):
     refZ_hist = z_hist[i_ref] #historical reference height samples corresponding to refFreq
     
     iRefZ_hist_in_z_fut = np.nanargmin(np.abs(z_fut - refZ_hist),axis=0) #find future frequency corresponding to those heights
-    #note that the highest frequency possible is the lower bound of the GPD (or the distribution used below the GPD) 
     
     AF = f[iRefZ_hist_in_z_fut]/refFreq #divide future frequency correspondong to refZ_hist by historical reference frequency
 
-    return z_fut,AF
+    max_AF = f[i_z_min]/f[i_ref] #keep track of what AF could maximally be given defined z
+    
+    return z_fut,AF,max_AF
 
 def compute_AF_timing(f,z_hist,slr,refFreq,AF):
 
