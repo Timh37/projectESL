@@ -22,7 +22,11 @@ from scipy import interpolate
 cfg = load_config('/Users/timhermans/Documents/GitHub/projectESL/config.yml')
 sites = xr.open_dataset(cfg['input']['paths']['sites'])
 #sites = xr.open_mfdataset((os.path.join(cfg['general']['project_path'],'input',cfg['general']['sites_filename'])),concat_dim='locations',combine='nested')#.load()
-sites = sites#.isel(locations=np.arange(5))
+sites = sites
+
+if 'locations' not in sites.dims:
+    sites = sites.expand_dims('locations')
+
 sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
 
 out_qnts = np.array(cfg['output']['output_quantiles'].split(',')).astype('float')
