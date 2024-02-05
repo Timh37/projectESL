@@ -8,7 +8,7 @@ from tqdm import tqdm
 from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, open_GESLA2_files, open_GESLA3_files, detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
 
 def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
-        
+    ''' For queried sites, try to find nearest GESLA record within "maxdist" that fulfills the criteria for being included set in "cfg".'''    
     settings = cfg['preprocessing']
 
     #get GESLA locations
@@ -20,7 +20,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
         raise Exception('Data source not recognized.')
     
     min_idx = [mindist(x,y,station_lats,station_lons,maxdist) for x,y in zip(queried.lat.values, queried.lon.values)] #sites within maximum distance from queried points
-    
+
     matched_filenames = []
     sites_with_esl = []
     for i in np.arange(len(queried.locations)): #loop over queried sites
@@ -43,12 +43,13 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     # Loop over the matched files
     print('Analyzing GESLA records.')
     for i in tqdm(np.arange(len(sites_with_esl))): #loop over sea-level projection sites with matched ESL data
-    		
         # This ID
         this_id = str(sites_with_esl[i])
         this_id_passed = False
 
-        # Loop over the esl files within the match radius for this location, use the first one for which data fulfills criteria
+        # Loop over the esl files within the match radius for this location, from nearest to furthest, use the first one for which data fulfills criteria
+        
+        ### an alternative option could be to open all fns within radius, and use the longest?
         for esl_file in matched_filenames[i]:
             
             # if this esl file was already tested and passed
@@ -81,8 +82,10 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
                 
                 extremes = pot_extremes_from_gesla_dfs(dfs,settings['extremes_threshold'],settings['declus_method'],settings['declus_window'])
                 gpd_params = fit_gpd_to_gesla_extremes(extremes)
+                
                 esl_statistics[this_id] = gpd_params
-    			
+                esl_statistics[this_id]['vdatum'] = dfs[esl_file].attrs['vdatum']
+                
                 # This file passed, add it to the pass file dictionary
                 pass_files[str(esl_file)] = this_id
                 # This ID has data, set the flag to move onto the next ID
@@ -102,7 +105,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     return esl_statistics
 
 def pot_extremes_from_gesla_dfs(dfs,threshold_pct,declus_method=None,declus_window=None):
-    #declus window in days
+    ''' Derive declustered peaks over threshold based on preprocessed data in "dfs". Declustering is optional but recommended.'''
     
     assert ((threshold_pct>0) & (threshold_pct<100))
     extremes_dfs = {}
@@ -160,6 +163,12 @@ def pot_extremes_from_gesla_dfs(dfs,threshold_pct,declus_method=None,declus_wind
     return extremes_dfs
 
 def fit_gpd_to_gesla_extremes(dfs):
+    '''
+    For each dataframe in dict of dataframes, do MLE of GPD parameters based on peaks over threshold.
+    Estimates are initialized using method of moments and estimated with python version of gplike.m. 
+    
+    Expected inputs are extremes derived from GESLA data stored under ['sea_level'].
+    '''
     for k,df in dfs.items():
         loc = df.attrs['threshold'] #location parameter = threshold
         
@@ -190,7 +199,7 @@ def fit_gpd_to_gesla_extremes(dfs):
         else:
             gpd_dfs = pd.concat((gpd_dfs,gpd_df))
             
-    return gpd_dfs
+    return gpd_dfs #output dictionaries with GPD parameters
 
 
 def gplike(shape,scale,data):
@@ -271,10 +280,12 @@ def gplike(shape,scale,data):
     return nlogL,acov
 
 def infer_avg_extr_pyear(loc,scale,shape,rz,rf):
+    '''infers average rate of exceedance of location parameter given GPD parameters and known return curve'''
     return rf/np.power((1+(shape*(rz-loc)/scale)),(-1/shape))
 
 
 def multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n,seed=None):
+    '''generate scale and shape samples assuming a multivariate normal distribution with covariance matrix "cov"'''
     if seed:
         np.random.seed(seed)
     gp_samples = np.random.multivariate_normal([shape,scale], cov,size=n)
@@ -285,6 +296,7 @@ def multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n,seed=None):
     return scale_samples, shape_samples
 
 def gum_amax_Z_from_F(scale,loc,f): 
+    '''compute return heights for return frequencies "f" based on Gumbel distribution parameters'''
     try: #convert array input to float if using only 1 scale
         scale=scale.item()
     except:
@@ -463,7 +475,7 @@ def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
 
 
 def get_return_curve_gpd(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
-    
+    '''wrapper function around gpd_Z_from_F functions that handles input/output shapes'''
     assert np.shape(scale)==np.shape(shape)
     
     f_=f
@@ -487,7 +499,7 @@ def get_return_curve_gpd(f,scale,shape,loc,avg_exceed,below_gpd=None,mhhw=None):
     return z
 
 def get_return_curve_gumbel(f,scale,loc):
-    
+    '''wrapper function around gum_Z_from_F functions that handles input/output shapes'''
     f_=f
     if np.isscalar(scale) == False:
         f_ = np.repeat(f_[:,np.newaxis],len(scale),axis=1) #repeat f num_mc times

@@ -6,12 +6,23 @@ import os
 from projecting import find_flopros_protection_levels, find_diva_protection_levels
 from esl_analysis import infer_avg_extr_pyear
 from utils import mindist
+
 def load_config(cfgpath):
+    '''load projectESL configuration from "cfgpath" '''
     with open(cfgpath, 'r') as f: #open configuration file
         return yaml.safe_load(f)
+
+def open_sites(cfg):
+    '''open input queried sites .nc file. Must contain lon/lat coordinates with "locations" as a dimension.'''
+    sites = xr.open_dataset(cfg['input']['paths']['sites'])
+    if 'locations' not in sites.dims:
+        sites = sites.expand_dims('locations')
+
+    sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
+    return sites
     
 def store_esl_params(cfg,sites,esl_statistics):
-    
+    '''stores ESL parameters derived from tide gauge records held in "esl_statistics" dictionary at queried sites as .nc file'''
     ds = xr.Dataset(
     data_vars=dict(
         loc=(['locations'], [v['loc'].values[0] for k,v in esl_statistics.items()]),
@@ -33,9 +44,22 @@ def store_esl_params(cfg,sites,esl_statistics):
 
 
 def open_slr_projections(cfg):
+    '''
+    Open input sea-level projections .nc file.
     
-    slr = xr.open_mfdataset((cfg['input']['paths']['slr']),concat_dim='locations',combine='nested').load()
-    
+    Sea-level projections input must be a netcdf or zarr file containing a variable "sea_level_change",
+    with "locations" and "years" as dimensions. Lon/lat coordinates must also be provided. If 
+    propagating uncertainty in sea-level projections is desired, a third dimension called "samples"
+    must be added to the sea-level projections. This format follows that of FACTS output.
+    '''
+    fn = cfg['input']['paths']['slr']
+    if fn.endswith('.zarr'):
+        slr = xr.open_dataset(fn,engine='zarr',chunks='auto')
+    elif fn.endswith('.nc'):
+        slr = xr.open_dataset(fn,chunks='auto')
+    else:
+        raise Exception('SLR file format not recognized.')
+        
     if 'locations' not in slr.dims:
         slr = slr.expand_dims('locations')
     
@@ -45,7 +69,8 @@ def open_slr_projections(cfg):
         else:
             idx = np.sort(np.random.choice(len(slr.samples), size=cfg['general']['num_mc'], replace=False))
         slr = slr.isel(samples = idx)
-    
+    else:
+        print('Warning: computing amplification factors without propagating uncertainty in sea-level projections.')
     try:
         slr = slr.rename({'latitude':'lat','longitude':'lon'})
     except:
@@ -57,11 +82,12 @@ def open_slr_projections(cfg):
     elif slr.sea_level_change.units=='cm':
         slr['sea_level_change'] = slr['sea_level_change']/100
         slr.sea_level_change.attrs['units'] = 'm'
-        
+    
+    slr['locations'] = slr.locations.astype('str')
     return slr
 
 def get_refFreqs(cfg,sites,esl_statistics):
-    
+    ''' determine reference frequencies for queried sites based on user options in config'''
     settings = cfg['projecting']
     if settings['refFreqs'] == 'diva': #find contemporary DIVA flood protection levels
         qlats = [sites.lat.sel(locations=k).values for k in esl_statistics.keys()]
@@ -77,12 +103,13 @@ def get_refFreqs(cfg,sites,esl_statistics):
     elif np.isscalar(settings['refFreqs']): #use constant reference frequency for every location
             refFreqs = np.tile(settings['refFreqs'],len(esl_statistics))
     else: 
-        raise Exception('Reference frequency must be "diva", "flopros" or a constant.')
+        raise Exception('Rquested reference frequency must be "diva", "flopros" or a constant.')
             
     return refFreqs
 
 
 def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
+    '''open GPD parameters from Hermans et al. (2023) NCLIM and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['hermans2023'])
     min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
     
@@ -112,6 +139,7 @@ def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
 
 
 def get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics):
+    '''open GPD parameters from Kirezci et al. (2020) and find parameters nearest to queried sites'''
     gpd_params = pd.read_csv(cfg['input']['paths']['kirezci2020'])
     
     min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
@@ -136,6 +164,7 @@ def get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics):
     return esl_statistics
 
 def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
+    '''open GPD parameters from Vousdoukas et al. (2018) and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['vousdoukas2018'])
     
     min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
@@ -160,7 +189,7 @@ def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
     return esl_statistics
 
 def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
-    
+    '''open Gumbel parameters from Muis et al. (2020) and find parameters nearest to queried sites'''
     codec_gum = xr.open_dataset(cfg['input']['paths']['codec_gumbel'])
     min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.1)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
     
@@ -179,6 +208,7 @@ def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
 
 
 def get_coast_rp_return_curves(cfg,sites,esl_statistics):
+    '''open return curves from Dulaart et al. (2021) and find curves nearest to queried sites'''
     coast_rp_coords = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'pxyn_coastal_points.xyn'))
     min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
     
