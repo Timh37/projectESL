@@ -1,3 +1,8 @@
+'''
+@author: Tim Hermans
+t(dot)h(dot)j(dot)hermans@uu(dot)nl
+'''
+
 import numpy as np
 import xarray as xr
 import pandas as pd
@@ -12,13 +17,56 @@ def load_config(cfgpath):
     with open(cfgpath, 'r') as f: #open configuration file
         return yaml.safe_load(f)
 
-def open_sites(cfg):
-    '''open input queried sites .nc file. Must contain lon/lat coordinates with "locations" as a dimension.'''
-    sites = xr.open_dataset(cfg['input']['paths']['sites'])
+def open_sites_input(cfg):
+    '''
+    Open input sites input file.
+    
+    Input must be a netcdf or zarr file containing lon/lat coords with 'locations' dimension.
+    
+    Providing sea-level projections as variable 'sea_level_change' with dimensions 'locations', 'years','samples' is optional depending on requested output.
+    
+    Format following FACTS output.
+    '''
+    fn = cfg['input']['paths']['sites_input']
+    if fn.endswith('.zarr'):
+        sites = xr.open_dataset(fn,engine='zarr',chunks='auto')
+    elif fn.endswith('.nc'):
+        sites = xr.open_dataset(fn,chunks='auto')
+    else:
+        raise Exception('Sites input file format not recognized.')
+
     if 'locations' not in sites.dims:
         sites = sites.expand_dims('locations')
-
     sites['locations'] = sites.locations.astype('str') #to use them as keys for dictionary
+    
+    try:
+        sites = sites.rename({'latitude':'lat','longitude':'lon'})
+    except:
+        pass
+    
+    if ('lon' not in sites) or ('lat' not in sites):
+        raise Exception('Sites input must contain lon/lat coordinates.')
+    
+    if 'sea_level_change' in sites: #determine if file also contains sea-level projections:
+        if 'samples' in sites.sea_level_change.dims: #randomly select "num_mc" samples
+            if cfg['general']['num_mc']>len(sites.samples):
+                raise Exception('Insufficient SLR samples for desired number of Monte Carlo samples.')
+            else:
+                idx = np.sort(np.random.choice(len(sites.samples), size=cfg['general']['num_mc'], replace=False))
+            sites = sites.isel(samples = idx)
+        else:
+            print('Warning: Amplification factors will be computed without propagating uncertainty in sea-level projections.')
+        
+        if sites.sea_level_change.units!='m':
+            if sites.sea_level_change.units=='mm':
+                sites['sea_level_change'] = sites['sea_level_change']/1000
+                sites.sea_level_change.attrs['units'] = 'm'
+            elif sites.sea_level_change.units=='cm':
+                sites['sea_level_change'] = sites['sea_level_change']/100
+                sites.sea_level_change.attrs['units'] = 'm'
+            else:
+                raise Exception('Unit of sea-level projections not recognized.')
+            
     return sites
     
 def store_esl_params(cfg,sites,esl_statistics):
@@ -41,50 +89,6 @@ def store_esl_params(cfg,sites,esl_statistics):
     
     ds.attrs['config'] = str(cfg)
     return ds.to_netcdf(os.path.join(cfg['output']['output_dir'],'esl_params.nc'),mode='w')
-
-
-def open_slr_projections(cfg):
-    '''
-    Open input sea-level projections .nc file.
-    
-    Sea-level projections input must be a netcdf or zarr file containing a variable "sea_level_change",
-    with "locations" and "years" as dimensions. Lon/lat coordinates must also be provided. If 
-    propagating uncertainty in sea-level projections is desired, a third dimension called "samples"
-    must be added to the sea-level projections. This format follows that of FACTS output.
-    '''
-    fn = cfg['input']['paths']['slr']
-    if fn.endswith('.zarr'):
-        slr = xr.open_dataset(fn,engine='zarr',chunks='auto')
-    elif fn.endswith('.nc'):
-        slr = xr.open_dataset(fn,chunks='auto')
-    else:
-        raise Exception('SLR file format not recognized.')
-        
-    if 'locations' not in slr.dims:
-        slr = slr.expand_dims('locations')
-    
-    if 'samples' in slr.dims:
-        if cfg['general']['num_mc']>len(slr.samples):
-            raise Exception('Insufficient SLR samples for desired number of Monte Carlo samples.')
-        else:
-            idx = np.sort(np.random.choice(len(slr.samples), size=cfg['general']['num_mc'], replace=False))
-        slr = slr.isel(samples = idx)
-    else:
-        print('Warning: computing amplification factors without propagating uncertainty in sea-level projections.')
-    try:
-        slr = slr.rename({'latitude':'lat','longitude':'lon'})
-    except:
-        pass
-    
-    if slr.sea_level_change.units=='mm': #check sea-level change unit is meter
-        slr['sea_level_change'] = slr['sea_level_change']/1000
-        slr.sea_level_change.attrs['units'] = 'm'
-    elif slr.sea_level_change.units=='cm':
-        slr['sea_level_change'] = slr['sea_level_change']/100
-        slr.sea_level_change.attrs['units'] = 'm'
-    
-    slr['locations'] = slr.locations.astype('str')
-    return slr
 
 def get_refFreqs(cfg,sites,esl_statistics):
     ''' determine reference frequencies for queried sites based on user options in config'''
