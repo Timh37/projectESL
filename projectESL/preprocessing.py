@@ -1,9 +1,6 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
 """ .py
-Created on Mon Oct 28 13:54:34 2019, adapted 20-04-22.
 @author: Tim Hermans
-tim(dot)hermans@nioz(dot)nl
+t(dot)h(dot)j(dot)hermans@uu(dot)nl
 """
 import numpy as np
 import pandas as pd

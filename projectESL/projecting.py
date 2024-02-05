@@ -1,3 +1,7 @@
+'''
+@author: Tim Hermans
+t(dot)h(dot)j(dot)hermans@uu(dot)nl
+'''
 import numpy as np
 import geopandas as geopd
 from shapely.geometry import Point
@@ -5,16 +9,13 @@ from utils import angdist
 from tqdm import tqdm
 import os
 from openpyxl import load_workbook
-import numpy as np
-import pandas as pd
-import warnings
 
 def compute_AF(f,z_hist,slr,refFreq):
+    '''computes amplification factor based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" in a given year and reference frequency "refFreq"'''
     i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
     i_z_min = np.nanargmin(z_hist,axis=0)[0]
-    #f = np.repeat(f[:,None],len(slr),axis=1)
-    if (z_hist.ndim == 1):
-        
+    
+    if (z_hist.ndim == 1): #if no z_hist samples
         if np.isscalar(slr)==False:
             z_hist = np.repeat(z_hist[:,None],len(slr),axis=1)
     
@@ -31,7 +32,7 @@ def compute_AF(f,z_hist,slr,refFreq):
     return z_fut,AF,max_AF
 
 def compute_AF_timing(f,z_hist,slr,refFreq,AF):
-
+    '''computes amplification factor timing based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" as function of years and reference frequency "refFreq"'''
     if AF<=1:
         timing = np.zeros(len(slr.samples)) -1
         print("Warning: AF>=1; returning projected timing = -1.")
@@ -43,12 +44,11 @@ def compute_AF_timing(f,z_hist,slr,refFreq,AF):
     if (z_hist.ndim == 1):
         z_hist = np.repeat(z_hist[:,None],len(slr.samples),axis=1)
  
-    
     req_slr = z_hist[i_ref] - z_hist[i_ref_AF] #sea-level rise required to go from refFreq to AF*refFreq
     
     #find first year in which SLR > required SLR
     slr_minus_required = slr.values - np.repeat(req_slr[:,np.newaxis],len(slr.years),axis=1)
-    slr_minus_required[slr_minus_required<0] = 999
+    slr_minus_required[slr_minus_required<0] = 999 #set AFs for which sea-level fall is required to 999
     
     try:
         imin = np.nanargmin(slr_minus_required,axis=-1)
@@ -67,7 +67,7 @@ def compute_AF_timing(f,z_hist,slr,refFreq,AF):
 
 
 def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
-
+    '''find flood protection level of polygons nearest (within "maxdist") to queried sites (qlons,qlats)'''
     polygons = geopd.read_file(os.path.join(flopros_dir,'Results_adaptation_objectives/Countries_States_simplified.shp')) #shape file with region polygons
     wb = load_workbook(filename = os.path.join(flopros_dir,'FLOPROS_geogunit_107.xlsx')) #protection standards for each region
     ws = wb.active
@@ -130,6 +130,7 @@ def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
 
 
 def find_diva_protection_levels(qlons,qlats,diva_fn,maxdist):
+    '''find flood protection level of polygons nearest (within "maxdist") to queried sites (qlons,qlats)'''
     diva = geopd.read_file(diva_fn) #open diva geo file
     
     nearest_segments = []
