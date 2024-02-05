@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 from gesla import GeslaDataset
 import os
-from tqdm import tqdm
 from copy import deepcopy
 
 def resample_data(rawdata,resample_freq):
+    '''Resample raw tide gauge data "rawdata" (dict) to new "resample_freq" (str: ['H_mean','D_mean','D_max'])'''
     h_means = rawdata.resample('H').mean() # Skipna=False doesn't work
     h_means.loc[h_means['use_flag']!=1,'sea_level'] = np.nan #set hours during which 1 or more observations are bad to nan
     h_means = h_means[np.isfinite(h_means['sea_level'])] #drop nans
@@ -32,12 +32,13 @@ def resample_data(rawdata,resample_freq):
         d_maxs = d_maxs[np.isfinite(d_maxs['sea_level'])] #drop nans
         output = d_maxs
     else:
-        raise('Unknown resample frequency.')
+        raise Exception('Unknown resample frequency.')
         
     output.attrs['resample_freq'] = resample_freq
     return output
 
 def readmeta_GESLA2(filename):
+    ''' open GESLA2 header containing metadata'''
     with open(filename,encoding = 'raw_unicode_escape') as myfile:
         head = [next(myfile) for x in range(9)]
     station_name = head[1][12:-1].strip()	 
@@ -49,6 +50,7 @@ def readmeta_GESLA2(filename):
     return (station_name, station_lat, station_lon, start_date, end_date)
 
 def extract_GESLA2_locations(gesladir):
+    '''Generate a list of the coordinates of all gesla2 files in "gesladir" '''
     # Get a list of the gesla database files
     geslafiles = os.listdir(gesladir)
     if '.DS_Store' in geslafiles:
@@ -61,11 +63,10 @@ def extract_GESLA2_locations(gesladir):
     
     # Loop over the gesla files
     for this_file in geslafiles:
-	
         #Extract the station header information
         this_name, this_lat, this_lon, start_date, end_date = readmeta_GESLA2(os.path.join(gesladir, this_file))
         
-        # ppend this information to appropriate lists
+        # append this information to appropriate lists
         station_names.append(this_name)	 
         station_lats.append(float(this_lat))
         station_lons.append(float(this_lon))
@@ -74,13 +75,12 @@ def extract_GESLA2_locations(gesladir):
     return (station_names,station_lats,station_lons,station_filenames)
 
 def extract_GESLA3_locations(metafile_path):
-    
+    '''Generate a list of the coordinates of all gesla3 files in using the metadata at "metafile_path" '''
     meta = pd.read_csv(metafile_path)
-    
     return (list(meta['SITE NAME']),list(meta['LATITUDE']),list(meta['LONGITUDE']),list(meta['FILE NAME']))
     
-
 def get_data_starting_index(file_name):
+    '''functionality to find first row with data to read in in GESLA files'''
     with open(file_name,errors='ignore') as fp:
         for i, line in enumerate(fp.readlines()):
                 if line.startswith("#"):
@@ -89,7 +89,30 @@ def get_data_starting_index(file_name):
                     break
         return i
 
+def reference_to_msl(cfg,data,fn):
+    ''' subtract MSL during "MSL_period" from data if possible'''
+    if 'msl_period' in cfg['preprocessing']:
+        
+        years = cfg['preprocessing']['msl_period'].split(',')
+        y0 = years[0]
+        y1 = str(int(years[1])+1)
+        
+        data_in_msl_period = data[data.index.to_series().between(y0,y1)]
+      
+        if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
+            print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+            vdatum = 'original'
+        else:    
+            msl = np.nanmean(data_in_msl_period['sea_level'])
+            data['sea_level'] = data['sea_level'] - msl
+            vdatum = 'MSL (' +y0+'-'+y1+')'
+    else: 
+        raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
+            
+    return data, vdatum
+
 def open_GESLA3_files(cfg,types,fns=None):
+    '''open & preprocess files in list "fns" with type in "types" e.g., ['Coastal','River'] (as defined by GESLA) if fulfilling inclusion criteria set in cfg'''
     path_to_files = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL')
     path_to_files = os.path.join(path_to_files,'') #append '/'
     
@@ -99,10 +122,10 @@ def open_GESLA3_files(cfg,types,fns=None):
     min_yrs = cfg['preprocessing']['min_yrs']
     
     if not fns:
-        fns = os.listdir(path_to_files) #get filenames
+        fns = os.listdir(path_to_files) #if fns is undefined, try to read in all files
     g3object = GeslaDataset(meta_file=meta_fn,data_path=path_to_files) #create dataset class
     
-    datasets = {}
+    datasets = {} #initialize dictionary
     for fn in fns:
         data = g3object.file_to_pandas(fn) #data [0] + metadata [1]
         
@@ -113,13 +136,15 @@ def open_GESLA3_files(cfg,types,fns=None):
         
         rawdata = data[0]
     
-        if rawdata.index[-1].year < 1980: #if record is older than 1980, skip it
+        if rawdata.index[-1].year < 2000: #if record is older than 2000, skip it
             continue
       
         rawdata.loc[rawdata['use_flag']!=1,'sea_level'] = np.nan
   
         #compute MSL from raw data if referencing to MSL
         if cfg['preprocessing']['ref_to_msl']:
+            rawdata,vdatum = reference_to_msl(cfg,rawdata,fn)
+            '''
             if 'msl_period' in cfg['preprocessing']:
                 
                 years = cfg['preprocessing']['msl_period'].split(',')
@@ -130,12 +155,14 @@ def open_GESLA3_files(cfg,types,fns=None):
               
                 if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
                     print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+                    vdatum = 'original'
                 else:    
                     msl = np.nanmean(data_in_msl_period['sea_level'])
                     rawdata['sea_level'] = rawdata['sea_level'] - msl
+                    vdatum = 'MSL (' +y0+'-'+y1+')'
             else: 
                 raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
-
+            '''
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -146,15 +173,17 @@ def open_GESLA3_files(cfg,types,fns=None):
         
         for k,v in data[1].items():
             resampled_data.attrs[k] = v
-        #datasets.append(resampled_data.drop(columns=['qc_flag','use_flag']))
+        resampled_data.attrs['vdatum'] = vdatum
+
         datasets[fn] = resampled_data.drop(columns=['qc_flag','use_flag'])
 
     if len(datasets)==0:
-        raise Exception('0 records exceeding record length requirement.')    
+        raise Exception('0 records fulfill inclusion criteria.')    
     return datasets
 
 
 def open_GESLA2_files(cfg,fns=None):
+    '''open & preprocess files in list "fns" if fulfilling inclusion criteria set in cfg'''
     path_to_files = cfg['input']['paths']['gesla2']
     path_to_files = os.path.join(path_to_files,'') #append '/'
     
@@ -162,7 +191,7 @@ def open_GESLA2_files(cfg,fns=None):
     min_yrs = cfg['preprocessing']['min_yrs']
     
     if not fns:
-        fns = os.listdir(path_to_files) #get filenames
+        fns = os.listdir(path_to_files) #if fns is undefined, try to read in all files
     
     datasets = {}
     for fn in fns:
@@ -193,7 +222,7 @@ def open_GESLA2_files(cfg,fns=None):
                 parse_dates=[[0, 1]],
                 index_col=0,
             )
-        if data.index[-1].year < 1980: #if record is older than 1980, skip it
+        if data.index[-1].year < 2000: #if record is older than 2000, skip it
             continue
         
         #set invalid or missing data to nan (see also GESLA2 definitions)
@@ -202,6 +231,8 @@ def open_GESLA2_files(cfg,fns=None):
         
         #compute MSL from raw data if referencing to MSL
         if cfg['preprocessing']['ref_to_msl']:
+            data,vdatum = reference_to_msl(cfg,data,fn)
+            '''
             if 'msl_period' in cfg['preprocessing']:
                 years = cfg['preprocessing']['msl_period'].split(',')
                 y0 = years[0]
@@ -211,12 +242,14 @@ def open_GESLA2_files(cfg,fns=None):
                 
                 if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
                     print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+                    vdatum = 'original'
                 else:    
                     msl = np.nanmean(data_in_msl_period['sea_level'])
                     data['sea_level'] = data['sea_level'] - msl
+                    vdatum = 'MSL (' +y0+'-'+y1+')'
             else: 
                 raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
-            
+            '''
         resampled_data = resample_data(data,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -229,37 +262,37 @@ def open_GESLA2_files(cfg,fns=None):
         resampled_data.attrs['site_name'] = metadata[0]
         resampled_data.attrs['latitude'] = metadata[1]
         resampled_data.attrs['longitude'] = metadata[2]
-        
-        #datasets.append(resampled_data.drop(columns=['qc_flag','use_flag']))
+        resampled_data.attrs['vdatum'] = vdatum
+
         datasets[fn] = resampled_data.drop(columns=['qc_flag','use_flag'])
     
     if len(datasets)==0:
-        raise Exception('0 records exceeding record length requirement.')    
+        raise Exception('0 records fulfill inclusion criteria.')    
     return datasets
 
 def detrend_gesla_dfs(dfs):
+    '''detrend sea_level in dataframes in "dfs"'''
     detrended_dfs = deepcopy(dfs)
     for k,df in detrended_dfs.items():
         x =  df.index.values.astype(np.int64) // 10 ** 9 #convert to seconds timestamp
         y =  df['sea_level'].values.astype('float64')
         lrcoefs = np.polyfit(x,y,1)
         trend = np.polyval(lrcoefs,x)
-        
-        #df['sea_level'] = df['sea_level'] - trend + lrcoefs[-1] #subtract trend without intercept
+
         df['sea_level'] = df['sea_level'] - trend + np.mean(trend) #subtract trend without changing the vertical datum (mean of timeseries)
     return detrended_dfs
 
 def deseasonalize_gesla_dfs(dfs):
+    '''subtract long-term monthly means from sea_level in dataframes in "dfs"'''
     deseasonalized_dfs = deepcopy(dfs)
     for k,df in deseasonalized_dfs.items():
 
         monthly_means_at_timesteps = df.groupby(df.index.month).transform('mean')['sea_level'].astype('float64') #contains mean of all timesteps in month for all years together at each timestep in that month
-        
         df['sea_level'] = df['sea_level'] - monthly_means_at_timesteps + np.mean(monthly_means_at_timesteps) #subtract without changing the vertical datum (mean of timeseries)
-
     return deseasonalized_dfs
 
 def subtract_amean_from_gesla_dfs(dfs):
+    '''subtract annual means from sea_level in dataframes in "dfs"'''
     dfs_no_amean = deepcopy(dfs)
     for k,df in dfs_no_amean.items():
         annual_means_at_timesteps = df.groupby(df.index.year).transform('mean')['sea_level'].astype('float64')
@@ -267,6 +300,7 @@ def subtract_amean_from_gesla_dfs(dfs):
     return dfs_no_amean
     
 def drop_shorter_gesla_neighbors(dfs,min_dist=3):
+    '''not used in projectESL currently'''
     filtered_dfs = deepcopy(dfs)
     
     for k,df in dfs.items():
