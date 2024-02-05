@@ -59,7 +59,7 @@ def download_ar6_full_sample_projections_gridded(wf,ssp,out_dir): #~52Gb!
     ds = xr.open_dataset(ds_url, engine='zarr', chunks='auto')
     return ds.to_zarr(os.path.join(out_dir,'full_sample_total_'+wf+'_'+ssp+'.zarr'),mode='w')
 
-def add_ar6_full_sample_projections_to_sites(sites,slr_fn,out_dir):
+def add_ar6_full_sample_projections_to_sites(sites,slr_fn):
     
     ds = xr.open_dataset(slr_fn, engine='zarr', chunks='auto')
     ds_stacked = ds.stack(locations=['lon','lat'])
