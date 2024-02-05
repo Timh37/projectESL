@@ -1,3 +1,7 @@
+'''
+@author: Tim Hermans
+t(dot)h(dot)j(dot)hermans@uu(dot)nl
+'''
 import numpy as np
 import numpy.matlib
 import pandas as pd
