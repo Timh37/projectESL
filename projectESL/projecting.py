@@ -35,7 +35,7 @@ def compute_AF_timing(f,z_hist,slr,refFreq,AF):
     '''computes amplification factor timing based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" as function of years and reference frequency "refFreq"'''
     if AF<=1:
         timing = np.zeros(len(slr.samples)) -1
-        print("Warning: AF>=1; returning projected timing = -1.")
+        print("Warning: AF<=1; returning projected timing = -1.")
         return timing
     
     i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
