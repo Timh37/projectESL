@@ -115,7 +115,7 @@ def get_refFreqs(cfg,sites,esl_statistics):
 def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
     '''open GPD parameters from Hermans et al. (2023) NCLIM and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['hermans2023'])
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
     
     if len(gpd_params.nboot) > cfg['general']['num_mc']:
         isamps = np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc'])
@@ -146,7 +146,7 @@ def get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics):
     '''open GPD parameters from Kirezci et al. (2020) and find parameters nearest to queried sites'''
     gpd_params = pd.read_csv(cfg['input']['paths']['kirezci2020'])
     
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
 
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -171,7 +171,7 @@ def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
     '''open GPD parameters from Vousdoukas et al. (2018) and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['vousdoukas2018'])
     
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.1) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
 
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -195,7 +195,7 @@ def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
 def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
     '''open Gumbel parameters from Muis et al. (2020) and find parameters nearest to queried sites'''
     codec_gum = xr.open_dataset(cfg['input']['paths']['codec_gumbel'])
-    min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.1)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.25)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
     
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -214,16 +214,26 @@ def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
 def get_coast_rp_return_curves(cfg,sites,esl_statistics):
     '''open return curves from Dulaart et al. (2021) and find curves nearest to queried sites'''
     coast_rp_coords = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'pxyn_coastal_points.xyn'))
-    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.1)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
+    #use a slightly larger distance tolerance here because GTSM output is used at locations every 25 km along the global coastline (Dullart et al., 2021).
     
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
             if np.isscalar(min_idx[i]) == False: #if multiple sites within radius, pick the first (we don't have information about series length here)
                 min_idx[i] = min_idx[i][0]
             this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name))
+            if int(coast_rp_coords.iloc[min_idx[i]].name)<10000:
+                this_id = '0'+this_id
+           
             rc = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'rp_full_empirical_station_'+this_id+'.pkl'))
-            rc = rc['rp'][np.isfinite(rc['rp'])]
-            
+            rc =rc['rp'][np.isfinite(rc['rp'])]
+            #in some cases coast rp RPs can be non-monotonically increasing, for low heights if tcs defined where etcs not defined; we don't want to use this part
+            d = np.where(np.diff(rc)<0)[0]#find where not increasing
+            try:
+                rc = rc.iloc[d[0]+1::]
+            except:
+                pass
+        
             esl_statistics[sites.locations.values[i]] = {}
             esl_statistics[sites.locations.values[i]]['z_hist'] = np.flip(rc.index.values)
             esl_statistics[sites.locations.values[i]]['f_hist'] = np.flip(1/rc.values) 
