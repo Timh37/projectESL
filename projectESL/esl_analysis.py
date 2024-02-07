@@ -192,7 +192,7 @@ def fit_gpd_to_gesla_extremes(dfs):
     
         if gp_nlogl == np.Inf:
             #GPD parameters not supported, confidence intervals and standard errors cannot be computed reliably
-            print(k+' - not included, estimated GPD parameters not supported.')
+            print(k+' - not included, GPD parameter estimation is unreliable.')
             continue
         
         d = {'loc':[loc], 'scale': [gp_params[-1]], 'shape': [gp_params[0]], 'cov': [gp_cov], 'avg_extr_pyear': df.attrs['avg_extr_pyear'], 'mhhw': df.attrs['mhhw'], 'key': [k]}
@@ -295,7 +295,7 @@ def multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n,seed=None):
     gp_samples = np.random.multivariate_normal([shape,scale], cov,size=n)
     shape_samples = gp_samples[:,0]
     scale_samples = gp_samples[:,1]
-    scale_samples[scale_samples<0] = 0 #no negative scales
+    scale_samples[scale_samples<0] = 0.00001 #no negative scales, assign very small scale instead (completely 0 leads to division problems)
     
     return scale_samples, shape_samples
 
