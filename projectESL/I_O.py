@@ -9,7 +9,6 @@ import pandas as pd
 import yaml
 import os
 from projecting import find_flopros_protection_levels, find_diva_protection_levels
-from esl_analysis import infer_avg_extr_pyear
 from utils import mindist
 
 def load_config(cfgpath):
@@ -115,7 +114,7 @@ def get_refFreqs(cfg,sites,esl_statistics):
 def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
     '''open GPD parameters from Hermans et al. (2023) NCLIM and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['hermans2023'])
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
     
     if len(gpd_params.nboot) > cfg['general']['num_mc']:
         isamps = np.random.randint(0,len(gpd_params.nboot),cfg['general']['num_mc'])
@@ -143,10 +142,11 @@ def get_gpd_params_from_Hermans2023(cfg,sites,esl_statistics):
 
 
 def get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics):
+    from esl_analysis import infer_avg_extr_pyear
     '''open GPD parameters from Kirezci et al. (2020) and find parameters nearest to queried sites'''
     gpd_params = pd.read_csv(cfg['input']['paths']['kirezci2020'])
     
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
 
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -168,10 +168,11 @@ def get_gpd_params_from_Kirezci2020(cfg,sites,esl_statistics):
     return esl_statistics
 
 def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
+    from esl_analysis import infer_avg_extr_pyear
     '''open GPD parameters from Vousdoukas et al. (2018) and find parameters nearest to queried sites'''
     gpd_params = xr.open_dataset(cfg['input']['paths']['vousdoukas2018'])
     
-    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
 
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -195,7 +196,7 @@ def get_gpd_params_from_Vousdoukas2018(cfg,sites,esl_statistics):
 def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
     '''open Gumbel parameters from Muis et al. (2020) and find parameters nearest to queried sites'''
     codec_gum = xr.open_dataset(cfg['input']['paths']['codec_gumbel'])
-    min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.25)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.2)[0] for x,y in zip(sites.lat.values, sites.lon.values)]
     
     for i in np.arange(len(sites.locations)):
         if min_idx[i] is not None:
@@ -214,7 +215,7 @@ def get_gum_amax_from_CoDEC(cfg,sites,esl_statistics):
 def get_coast_rp_return_curves(cfg,sites,esl_statistics):
     '''open return curves from Dulaart et al. (2021) and find curves nearest to queried sites'''
     coast_rp_coords = pd.read_pickle(os.path.join(cfg['input']['paths']['coast-rp'],'pxyn_coastal_points.xyn'))
-    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.25) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
     #use a slightly larger distance tolerance here because GTSM output is used at locations every 25 km along the global coastline (Dullart et al., 2021).
     
     for i in np.arange(len(sites.locations)):
@@ -241,3 +242,26 @@ def get_coast_rp_return_curves(cfg,sites,esl_statistics):
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(sites.locations[i].values))
             continue
     return esl_statistics
+
+def open_CoDEC_waterlevels(cfg, sites):
+    codec = xr.open_mfdataset(os.path.join(cfg['input']['paths']['codec_dmax'],'*.nc')) #assumes daily maxima in similar file structure as original CDS download
+    codec_lats = codec.station_y_coordinate.values
+    codec_lons = codec.station_x_coordinate.values
+    
+    min_idx = [mindist(x,y,codec_lats,codec_lons,0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
+    for k in np.arange(len(sites.locations)):
+        if min_idx[k] is not None:
+            min_idx[k] = min_idx[k][0]
+        else:
+            min_idx[k] = np.nan
+            print("Warning: No nearby ESL information found for {0}. Skipping site.".format(sites.locations[k].values))
+    codec = codec.isel(stations = np.array(min_idx)[np.isfinite(min_idx)])
+    codec = codec.assign_coords({'locations':sites.locations[np.isfinite(min_idx)]})
+        
+    codec = codec.load() #load data into memory
+    
+    #do some cleaning up (not entirely sure why this is necessary, also seems to be the case in the original dataset)
+    codec = codec.drop_isel(stations = np.where(np.isnan(codec.waterlevel).any(dim='time'))[0]) #remove stations containing nans in their timeseries
+    codec = codec.where((codec.waterlevel.var(dim='time')>1e-5)).dropna(dim='stations') #remove weird stations with very low variance (erroneous, sea ice, internal seas?)
+
+    return codec
