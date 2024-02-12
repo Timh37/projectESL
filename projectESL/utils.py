@@ -59,16 +59,21 @@ def download_ar6_full_sample_projections_gridded(wf,ssp,out_dir): #~52Gb!
     ds = xr.open_dataset(ds_url, engine='zarr', chunks='auto')
     return ds.to_zarr(os.path.join(out_dir,'full_sample_total_'+wf+'_'+ssp+'.zarr'),mode='w')
 
-def add_ar6_full_sample_projections_to_sites(sites,slr_fn):
+def add_ar6_full_sample_projections_to_sites(sites,slr_fn,nsamps,period):
     
     ds = xr.open_dataset(slr_fn, engine='zarr', chunks='auto')
     ds_stacked = ds.stack(locations=['lon','lat'])
     
-    min_idx = [np.argmin(angdist(x,y,ds_stacked.lat.values,ds_stacked.lon.values)) for x,y in zip(sites.lat.values, sites.lon.values)] #get nearest projections to sites
+    coastrp_lons = ds_stacked.lon.values
+    coastrp_lats = ds_stacked.lat.values
     
+    mask = np.isnan(ds.isel(years=0,samples=0).sea_level_change).stack(locations=['lon','lat']).values #get land mask
+    min_idx = [np.argmin(angdist(x,y,coastrp_lats,coastrp_lons)+999*mask) for x,y in zip(sites.lat.values, sites.lon.values)] #get nearest projections to sites, don't use land
+
     ds_at_sites = ds_stacked.isel(locations=min_idx).drop('lat') #drop multiindex
     ds_at_sites['locations']=sites['locations'].values #assign locations from sites file
     
     sites['sea_level_change'] = ds_at_sites['sea_level_change'] #add SLC variable to sites file
+    sites = sites.sel(years=slice(str(period[0]),str(period[1]))).isel(samples=np.arange(nsamps))
 
     return sites
