@@ -65,7 +65,7 @@ def extract_GESLA2_locations(cfg):
         #Extract the station header information
         this_name, this_lat, this_lon, start_date, end_date = readmeta_GESLA2(os.path.join(gesladir, this_file))
         
-        if (np.datetime64(end_date).dt.year - np.datetime64(start_date).dt.year) < cfg['preprocessing']['min_yrs']:
+        if ((pd.to_datetime(end_date).year - pd.to_datetime(start_date).year) < cfg['preprocessing']['min_yrs']-1) or (pd.to_datetime(end_date).year<2000):
             continue
         # append this information to appropriate lists
         station_names.append(this_name)	 
