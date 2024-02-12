@@ -243,25 +243,26 @@ def get_coast_rp_return_curves(cfg,sites,esl_statistics):
             continue
     return esl_statistics
 
-def open_CoDEC_waterlevels(cfg, sites):
-    codec = xr.open_mfdataset(os.path.join(cfg['input']['paths']['codec_dmax'],'*.nc')) #assumes daily maxima in similar file structure as original CDS download
-    codec_lats = codec.station_y_coordinate.values
-    codec_lons = codec.station_x_coordinate.values
+def open_gtsm_waterlevels(cfg, sites):
+    gtsm = xr.open_mfdataset(os.path.join(cfg['input']['paths']['gtsm_dmax'],'*.nc')) #assumes daily maxima in similar file structure as original CDS download
+    gtsm_lats = gtsm.station_y_coordinate.values
+    gtsm_lons = gtsm.station_x_coordinate.values
     
-    min_idx = [mindist(x,y,codec_lats,codec_lons,0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
+    min_idx = [mindist(x,y,gtsm_lats,gtsm_lons,0.2) for x,y in zip(sites.lat.values, sites.lon.values)]
     for k in np.arange(len(sites.locations)):
         if min_idx[k] is not None:
             min_idx[k] = min_idx[k][0]
         else:
             min_idx[k] = np.nan
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(sites.locations[k].values))
-    codec = codec.isel(stations = np.array(min_idx)[np.isfinite(min_idx)])
-    codec = codec.assign_coords({'locations':sites.locations[np.isfinite(min_idx)]})
+    gtsm = gtsm.isel(stations = np.array(min_idx)[np.isfinite(min_idx)].astype('int'))
+    gtsm = gtsm.rename({'stations':'locations'})
+    gtsm['locations'] = sites.locations[np.isfinite(min_idx)]
         
-    codec = codec.load() #load data into memory
+    gtsm = gtsm.load() #load data into memory
     
     #do some cleaning up (not entirely sure why this is necessary, also seems to be the case in the original dataset)
-    codec = codec.drop_isel(stations = np.where(np.isnan(codec.waterlevel).any(dim='time'))[0]) #remove stations containing nans in their timeseries
-    codec = codec.where((codec.waterlevel.var(dim='time')>1e-5)).dropna(dim='stations') #remove weird stations with very low variance (erroneous, sea ice, internal seas?)
+    gtsm = gtsm.drop_isel(locations = np.where(np.isnan(gtsm.waterlevel).any(dim='time'))[0]) #remove stations containing nans in their timeseries
+    gtsm = gtsm.where((gtsm.waterlevel.var(dim='time')>1e-5)).dropna(dim='locations') #remove weird stations with very low variance (erroneous, sea ice, internal seas?)
 
-    return codec
+    return gtsm
