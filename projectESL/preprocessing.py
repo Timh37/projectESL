@@ -47,8 +47,9 @@ def readmeta_GESLA2(filename):
 	
     return (station_name, station_lat, station_lon, start_date, end_date)
 
-def extract_GESLA2_locations(gesladir):
+def extract_GESLA2_locations(cfg):
     '''Generate a list of the coordinates of all gesla2 files in "gesladir" '''
+    gesladir = cfg['input']['paths']['gesla2']
     # Get a list of the gesla database files
     geslafiles = os.listdir(gesladir)
     if '.DS_Store' in geslafiles:
@@ -64,6 +65,8 @@ def extract_GESLA2_locations(gesladir):
         #Extract the station header information
         this_name, this_lat, this_lon, start_date, end_date = readmeta_GESLA2(os.path.join(gesladir, this_file))
         
+        if (np.datetime64(end_date).dt.year - np.datetime64(start_date).dt.year) < cfg['preprocessing']['min_yrs']:
+            continue
         # append this information to appropriate lists
         station_names.append(this_name)	 
         station_lats.append(float(this_lat))
@@ -72,9 +75,12 @@ def extract_GESLA2_locations(gesladir):
     
     return (station_names,station_lats,station_lons,station_filenames)
 
-def extract_GESLA3_locations(metafile_path):
+def extract_GESLA3_locations(cfg):
     '''Generate a list of the coordinates of all gesla3 files in using the metadata at "metafile_path" '''
-    meta = pd.read_csv(metafile_path)
+    meta = pd.read_csv(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'))
+    
+    meta = meta[(meta['GAUGE TYPE']=='Coastal') & (meta['OVERALL RECORD QUALITY']=='No obvious issues') & (meta['NUMBER OF YEARS'] >= cfg['preprocessing']['min_yrs']) & (pd.to_datetime(meta['END DATE/TIME'],format='mixed').dt.year>=2000)].reset_index(drop=True) #only consider coastal gauges without issues with sufficient length
+    
     return (list(meta['SITE NAME']),list(meta['LATITUDE']),list(meta['LONGITUDE']),list(meta['FILE NAME']))
     
 def get_data_starting_index(file_name):
@@ -109,7 +115,7 @@ def reference_to_msl(cfg,data,fn):
             
     return data, vdatum
 
-def ingest_GESLA3_files(cfg,types,fns=None):
+def ingest_GESLA3_files(cfg,fns=None):
     '''open & preprocess files in list "fns" with type in "types" e.g., ['Coastal','River'] (as defined by GESLA) if fulfilling inclusion criteria set in cfg'''
     path_to_files = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL')
     path_to_files = os.path.join(path_to_files,'') #append '/'
@@ -127,7 +133,7 @@ def ingest_GESLA3_files(cfg,types,fns=None):
     for fn in fns:
         data = g3object.file_to_pandas(fn) #data [0] + metadata [1]
         
-        if data[1]['gauge_type'] not in types:
+        if data[1]['gauge_type'] != 'Coastal':
             continue
         if data[1]['number_of_years'] < min_yrs:
             continue

@@ -67,9 +67,9 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
 
     #get GESLA locations
     if cfg['input']['input_source'].lower() == 'gesla2':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg['input']['paths']['gesla2'])#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA2_locations(cfg)#extract_GESLA2_locations('/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018/')
     elif cfg['input']['input_source'].lower() == 'gesla3':
-        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'))
+        (station_names, station_lats, station_lons, station_filenames) = extract_GESLA3_locations(cfg)
     else:
         raise Exception('Data source not recognized.')
     
@@ -111,8 +111,10 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
                 print("{0} already PASSED a previous check on data constraints. Mapping site ID {1} to site ID {2}.".format(esl_file, pass_files[esl_file], this_id))
                 esl_statistics[this_id] = esl_statistics[pass_files[str(esl_file)]]
                 this_id_passed = True
+            elif np.isin(esl_file,fail_files):
+                continue
     
-            # if current sea-level projectio nlocation already has esl parameters, skip to the next
+            # if current sea-level projection location already has esl parameters, skip to the next
             if this_id_passed:
                 continue            
             
@@ -123,7 +125,7 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
                     dfs = ingest_GESLA2_files(cfg,fns=[esl_file])
     
                 elif cfg['input']['input_source'].lower() == 'gesla3':
-                    dfs = ingest_GESLA3_files(cfg,['Coastal'],fns=[esl_file])
+                    dfs = ingest_GESLA3_files(cfg,fns=[esl_file])
                     
                 ###   
                 #preproc options:
