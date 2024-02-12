@@ -5,11 +5,61 @@ t(dot)h(dot)j(dot)hermans@uu(dot)nl
 import numpy as np
 import numpy.matlib
 import pandas as pd
+import xarray as xr
 from scipy.stats import genpareto
 import os
 from utils import mindist
 from tqdm import tqdm
-from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, open_GESLA2_files, open_GESLA3_files, detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
+from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, ingest_GESLA2_files, ingest_GESLA3_files 
+from preprocessing import detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
+from preprocessing import detrend_ds, deseasonalize_ds, subtract_amean_from_ds
+from I_O import open_gtsm_waterlevels
+
+def ESL_stats_from_gtsm_dmax(queried,cfg):
+    settings = cfg['preprocessing']
+    print('Warning: Several preprocessing options applicable to GESLA data are bypassed for analyzing GTSM data, such as minimum length, MSL reference, and modeling events below the GPD threshold.')
+    
+    assert ((settings['extremes_threshold']>0) & (settings['extremes_threshold']<100))
+    
+    if settings['resample_freq'] != 'D_max':
+        raise Exception('Configured resample frequency not yet implemented. Assuming daily maxima Gtsm data.')
+    if settings['declus_method'] != 'rolling_max':
+        raise Exception('Configured declustering method not yet implemented.')      
+    
+    print('Opening GTSM timeseries near queried sites.')
+    gtsm = open_gtsm_waterlevels(cfg,queried)
+    
+    print('Preprocessing GTSM timeseries & finding extremes.')
+    #preproc options:
+    if settings['detrend']:
+        gtsm = detrend_ds(gtsm,'waterlevel')
+    if settings['deseasonalize']:
+        gtsm = deseasonalize_ds(gtsm,'waterlevel')
+    if settings['subtract_amean']:
+        gtsm = subtract_amean_from_ds(gtsm,'waterlevel')
+        
+    threshold= gtsm.waterlevel.quantile(settings['extremes_threshold']/100,dim='time')
+    extremes = gtsm.waterlevel.where(gtsm.waterlevel>=threshold)
+    extremes_declustered = extremes.where((extremes==extremes.rolling(time=settings['declus_window'],center=True,min_periods=1).max()) & (np.isfinite(extremes))) #note this only works if resolution is daily!!
+
+    avg_extr_pyear = 365.25 * np.isfinite(extremes_declustered).sum(dim='time')/len(gtsm.time)
+    
+    print('Fitting GPD to extremes.')
+    gpd_params,nlogl,cov_mats = xr.apply_ufunc(fit_gpd_to_extremes_ds,
+                   (extremes_declustered-threshold),
+                   input_core_dims=[["time"]],  # list with one entry per arg
+                   output_core_dims=[['params'],[],['i','j']],
+                   vectorize=True,
+                   dask="parallelized")
+
+    esl_statistics = gpd_params.to_dataset(name='gpd_params')
+    esl_statistics['loc'] = threshold
+    esl_statistics['nlogl'] = nlogl
+    esl_statistics['cov'] = cov_mats
+    esl_statistics['avg_extr_pyear'] = avg_extr_pyear
+    esl_statistics = esl_statistics.assign_coords({'params':['scale','shape']})
+
+    return esl_statistics
 
 def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
     ''' For queried sites, try to find nearest GESLA record within "maxdist" that fulfills the criteria for being included set in "cfg".'''    
@@ -70,10 +120,10 @@ def ESL_stats_from_raw_GESLA(queried,cfg,maxdist):
             try:
                 #this tide gauge data
                 if cfg['input']['input_source'].lower() == 'gesla2':
-                    dfs = open_GESLA2_files(cfg,fns=[esl_file])
+                    dfs = ingest_GESLA2_files(cfg,fns=[esl_file])
     
                 elif cfg['input']['input_source'].lower() == 'gesla3':
-                    dfs = open_GESLA3_files(cfg,['Coastal'],fns=[esl_file])
+                    dfs = ingest_GESLA3_files(cfg,['Coastal'],fns=[esl_file])
                     
                 ###   
                 #preproc options:
@@ -166,6 +216,32 @@ def pot_extremes_from_gesla_dfs(dfs,threshold_pct,declus_method=None,declus_wind
         
     return extremes_dfs
 
+def guess_initial_gpd_params(data):
+    
+    #provide initial guess of parameters using method of moments (code based on MATLAB script gpfit.m)
+    xbar = np.mean(data) #mean of extremes
+    s2 = np.var(data) #variance of extremes
+    k0 = -.5 * ((xbar**2)/s2 - 1) #initial guesses
+    sigma0 = .5 * xbar * ( (xbar**2) / s2 + 1)
+    xmax = max(data)
+    
+    if (k0 < 0 and xmax >= -sigma0/k0 ):# if method of moments invalid (code based on MATLAB script gpfit.m), #assume exponential distribution
+        k0 = 0
+        sigma0 = xbar
+    
+    return k0,sigma0
+
+def fit_gpd_to_extremes_ds(extremes_minus_loc):
+   
+    extremes_minus_loc = extremes_minus_loc[np.isfinite(extremes_minus_loc)]
+
+    k0,sigma0 = guess_initial_gpd_params(extremes_minus_loc)
+    
+    gp_params = genpareto.fit(extremes_minus_loc,loc=0,scale=sigma0,floc=0) #fit gpd based on ESLs and initial guess, note that optimization vals differ slightly from using gpfit.m
+    gp_nlogl, gp_cov = gplike(gp_params[0], gp_params[2],extremes_minus_loc) #calculate covariance matrix of estimated parameters
+    
+    return np.array([gp_params[-1],gp_params[0]]),gp_nlogl,gp_cov #scale/shape params, nlogl MLE diagnostic, scale/shape cov
+
 def fit_gpd_to_gesla_extremes(dfs):
     '''
     For each dataframe in dict of dataframes, do MLE of GPD parameters based on peaks over threshold.
@@ -176,6 +252,8 @@ def fit_gpd_to_gesla_extremes(dfs):
     for k,df in dfs.items():
         loc = df.attrs['threshold'] #location parameter = threshold
         
+        k0,sigma0 = guess_initial_gpd_params(df['sea_level'].values-loc)
+        '''
         #provide initial guess of parameters using method of moments (code based on MATLAB script gpfit.m)
         xbar = np.mean(df['sea_level'].values-loc) #mean of extremes
         s2 = np.var(df['sea_level'].values-loc) #variance of extremes
@@ -186,8 +264,8 @@ def fit_gpd_to_gesla_extremes(dfs):
         if (k0 < 0 and xmax >= -sigma0/k0 ):# if method of moments invalid (code based on MATLAB script gpfit.m), #assume exponential distribution
             k0 = 0
             sigma0 = xbar
-    
-        gp_params = genpareto.fit(df['sea_level'].values-loc,loc=0,scale=sigma0) #fit gpd based on ESLs and initial guess, note that optimization vals differ slightly from using gpfit.m
+        '''
+        gp_params = genpareto.fit(df['sea_level'].values-loc,loc=0,scale=sigma0,floc=0) #fit gpd based on ESLs and initial guess, note that optimization vals differ slightly from using gpfit.m #TH edit 8-2-24: may have to do with not fixing floc=0 as in gpfit.m, changed this
         gp_nlogl, gp_cov = gplike(gp_params[0], gp_params[2],df['sea_level'].values-loc) #calculate covariance matrix of estimated parameters
     
         if gp_nlogl == np.Inf:
