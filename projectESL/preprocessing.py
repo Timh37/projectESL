@@ -7,10 +7,11 @@ import pandas as pd
 from gesla import GeslaDataset
 import os
 from copy import deepcopy
+import xarray as xr
 
 def resample_data(rawdata,resample_freq):
     '''Resample raw tide gauge data "rawdata" (dict) to new "resample_freq" (str: ['H_mean','D_mean','D_max'])'''
-    h_means = rawdata.resample('H').mean() # Skipna=False doesn't work
+    h_means = rawdata.resample('H').mean() #as most records provide hourly obs, this is often the mean of 1 obs = the obs
     h_means.loc[h_means['use_flag']!=1,'sea_level'] = np.nan #set hours during which 1 or more observations are bad to nan
     h_means = h_means[np.isfinite(h_means['sea_level'])] #drop nans
     
@@ -108,7 +109,7 @@ def reference_to_msl(cfg,data,fn):
             
     return data, vdatum
 
-def open_GESLA3_files(cfg,types,fns=None):
+def ingest_GESLA3_files(cfg,types,fns=None):
     '''open & preprocess files in list "fns" with type in "types" e.g., ['Coastal','River'] (as defined by GESLA) if fulfilling inclusion criteria set in cfg'''
     path_to_files = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL')
     path_to_files = os.path.join(path_to_files,'') #append '/'
@@ -141,25 +142,7 @@ def open_GESLA3_files(cfg,types,fns=None):
         #compute MSL from raw data if referencing to MSL
         if cfg['preprocessing']['ref_to_msl']:
             rawdata,vdatum = reference_to_msl(cfg,rawdata,fn)
-            '''
-            if 'msl_period' in cfg['preprocessing']:
-                
-                years = cfg['preprocessing']['msl_period'].split(',')
-                y0 = years[0]
-                y1 = str(int(years[1])+1)
-                
-                data_in_msl_period = rawdata[rawdata.index.to_series().between(y0,y1)]
-              
-                if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
-                    print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
-                    vdatum = 'original'
-                else:    
-                    msl = np.nanmean(data_in_msl_period['sea_level'])
-                    rawdata['sea_level'] = rawdata['sea_level'] - msl
-                    vdatum = 'MSL (' +y0+'-'+y1+')'
-            else: 
-                raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
-            '''
+          
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -179,7 +162,7 @@ def open_GESLA3_files(cfg,types,fns=None):
     return datasets
 
 
-def open_GESLA2_files(cfg,fns=None):
+def ingest_GESLA2_files(cfg,fns=None):
     '''open & preprocess files in list "fns" if fulfilling inclusion criteria set in cfg'''
     path_to_files = cfg['input']['paths']['gesla2']
     path_to_files = os.path.join(path_to_files,'') #append '/'
@@ -229,24 +212,7 @@ def open_GESLA2_files(cfg,fns=None):
         #compute MSL from raw data if referencing to MSL
         if cfg['preprocessing']['ref_to_msl']:
             data,vdatum = reference_to_msl(cfg,data,fn)
-            '''
-            if 'msl_period' in cfg['preprocessing']:
-                years = cfg['preprocessing']['msl_period'].split(',')
-                y0 = years[0]
-                y1 = str(int(years[1])+1)
-                
-                data_in_msl_period = data[data.index.to_series().between(y0,y1)]
-                
-                if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
-                    print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
-                    vdatum = 'original'
-                else:    
-                    msl = np.nanmean(data_in_msl_period['sea_level'])
-                    data['sea_level'] = data['sea_level'] - msl
-                    vdatum = 'MSL (' +y0+'-'+y1+')'
-            else: 
-                raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
-            '''
+           
         resampled_data = resample_data(data,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -287,6 +253,34 @@ def deseasonalize_gesla_dfs(dfs):
         monthly_means_at_timesteps = df.groupby(df.index.month).transform('mean')['sea_level'].astype('float64') #contains mean of all timesteps in month for all years together at each timestep in that month
         df['sea_level'] = df['sea_level'] - monthly_means_at_timesteps + np.mean(monthly_means_at_timesteps) #subtract without changing the vertical datum (mean of timeseries)
     return deseasonalized_dfs
+
+def detrend_ds(ds,variable):
+    p = ds[variable].polyfit(dim='time', deg=1)
+    fit = xr.polyval(ds.time, p.polyfit_coefficients)
+    
+    detrended = ds[variable] - fit
+    detrended = detrended + ( ds[variable].mean(dim='time') - detrended.mean(dim='time') )
+    
+    ds[variable] = detrended
+    return ds
+
+def deseasonalize_ds(ds,variable):
+    '''subtract long-term monthly means from variable in dataset'''
+    deseasoned_ds = ds[variable].groupby(ds.time.dt.month) - ds[variable].groupby(ds.time.dt.month).mean('time')
+    
+    deseasoned_ds = deseasoned_ds + (ds[variable].mean(dim='time') - deseasoned_ds.mean(dim='time'))
+    
+    ds[variable] = deseasoned_ds
+    return ds
+
+def subtract_amean_from_ds(ds,variable):
+    '''subtract annual means from variable in dataset'''
+    ds_no_amean = ds[variable].groupby(ds.time.dt.year) - ds[variable].groupby(ds.time.dt.year).mean('time')
+    
+    ds_no_amean = ds_no_amean + (ds[variable].mean(dim='time') - ds_no_amean.mean(dim='time'))
+    
+    ds[variable] = ds_no_amean
+    return ds
 
 def subtract_amean_from_gesla_dfs(dfs):
     '''subtract annual means from sea_level in dataframes in "dfs"'''
