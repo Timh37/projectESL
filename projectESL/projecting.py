@@ -10,8 +10,8 @@ from tqdm import tqdm
 import os
 from openpyxl import load_workbook
 
-def compute_AF(f,z_hist,slr,refFreq):
-    '''computes amplification factor based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" in a given year and reference frequency "refFreq"'''
+def compute_AFs(f,z_hist,slr,refFreq):
+    '''computes amplification factor based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" at slr.years and reference frequency "refFreq"'''
     i_ref = np.argmin(np.abs(f-refFreq)) #find index of f closest to refFreq
     i_z_min = np.nanargmin(z_hist,axis=0)[0]
     
@@ -19,17 +19,20 @@ def compute_AF(f,z_hist,slr,refFreq):
         if np.isscalar(slr)==False:
             z_hist = np.repeat(z_hist[:,None],len(slr),axis=1)
     
-    z_fut = z_hist+slr
-        
-    refZ_hist = z_hist[i_ref] #historical reference height samples corresponding to refFreq
+    #z_fut = z_hist+slr
+    z_hist_ = np.repeat(z_hist[...,None],len(slr.years),axis=-1) #expand z_hist matrix 
+    z_fut = z_hist_ + slr.expand_dims({'f':f}) #compute future return curves by adding SLR for each frequency
     
+    
+    refZ_hist = z_hist_[i_ref] #historical reference height samples corresponding to refFreq
     iRefZ_hist_in_z_fut = np.nanargmin(np.abs(z_fut - refZ_hist),axis=0) #find future frequency corresponding to those heights
     
     AF = f[iRefZ_hist_in_z_fut]/refFreq #divide future frequency correspondong to refZ_hist by historical reference frequency
-
+    
     max_AF = f[i_z_min]/f[i_ref] #keep track of what AF could maximally be given defined z
     
-    return z_fut,AF,max_AF
+    return AF,max_AF,z_fut
+
 
 def compute_AF_timing(f,z_hist,slr,refFreq,AF):
     '''computes amplification factor timing based on historical return curve(s) "z_hist" = F("f"), sea-level projections "slr" as function of years and reference frequency "refFreq"'''
