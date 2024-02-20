@@ -168,9 +168,13 @@ if __name__ == "__main__":
     ### fitting stage
     esl_statistics = get_ESL_statistics(esl_data,cfg['input']['paths'][esl_data],input_locations,cfg['preprocessing'],n_samples,f)  #get ESL information at input locations
     save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),esl_statistics,'esl_statistics.nc') #store
-
+    
     ### projecting stage
     refFreqs = get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs) #grab reference frequencies for AFs at each site
+    
+    if cfg['general']['use_central_esl_estimates_only']:
+        esl_statistics=esl_statistics.drop(['cov','scale_samples','shape_samples'],errors='ignore')
+        
     output=dask.compute(*project_ESLs_lazily(esl_statistics,f,n_samples,refFreqs,
                                          input_locations,out_qnts,target_years,target_AFs,target_freqs)) #compute output for each location in parallel
     
