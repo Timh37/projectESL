@@ -69,7 +69,8 @@ def open_input_locations(path_to_input,num_samps):
                 input_locations.sea_level_change.attrs['units'] = 'm'
             else:
                 raise Exception('Unit of sea-level projections not recognized.')
-        
+    else:
+        print('Warning: no sea-level projections provided for input locations, will not be able to compute AFs.')
     return input_locations
 
     
@@ -82,7 +83,7 @@ def esl_statistics_dict_to_ds(input_locations,esl_statistics):
         shape=(['locations'], [v['shape'].values[0] for k,v in esl_statistics.items()]),
         cov=(['locations','i','j'], [v['cov'].values[0] for k,v in esl_statistics.items()]),
         avg_extr_pyear=(['locations'], [v['avg_extr_pyear'].values[0] for k,v in esl_statistics.items()]),
-        mhhw=(['locations'], [v['mhhw'].values[0] for k,v in esl_statistics.items()]), #to-do: this is not always in there
+        
     ),
     coords=dict(
         lon=(['locations'], input_locations.sel(locations=list(esl_statistics.keys())).lon.values),
@@ -91,22 +92,53 @@ def esl_statistics_dict_to_ds(input_locations,esl_statistics):
     ),
     )
    
+    try:
+        ds['mhhw'] = (['locations'], [v['mhhw'].values[0] for k,v in esl_statistics.items()]) #mhhw is optional in esl_statistics
+    except:
+        pass
+        
     return ds
 
-def save_esl_statistics(output_path,esl_statistics):
-    return esl_statistics.to_netcdf(os.path.join(output_path,'esl_statistics.nc'),mode='w')
+def save_ds_to_netcdf(output_path,ds,fn):
+    if os.path.exists(output_path) == False:
+        os.mkdir(output_path)
+    return ds.to_netcdf(os.path.join(output_path,fn),mode='w')
+
+def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_AFs=None,target_freqs=None):
+    
+    output_ds = xr.Dataset(data_vars=dict(),
+                           coords=dict(f=(['f'],f),
+                                       qnt = (out_qnts),
+                                       locations = esl_statistics.locations))
+    
+    output_ds['z_hist'] = (['locations','qnt','f'],np.stack([k[0] for k in output]))
+    
+    if target_years:
+        output_ds['z_fut'] = (['locations','qnt','f','target_year'],np.stack([k[1] for k in output]))
+        output_ds['AF'] = (['locations','qnt','target_year'],np.stack([k[2] for k in output]))
+        output_ds = output_ds.assign_coords({'target_year':target_years})
+        
+    if target_AFs:
+        output_ds['AF_timing'] = (['locations','qnt','target_AF'],np.stack([k[4] for k in output]))
+        output_ds = output_ds.assign_coords({'target_AF':target_AFs})
+
+    if target_freqs:
+        output_ds['f_timing'] = (['locations','qnt','target_f'],np.stack([k[5] for k in output]))
+        output_ds = output_ds.assign_coords({'target_f':target_freqs})
+    
+    return output_ds
 
 def get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs=None):
     ''' determine reference frequencies for queried input_locations based on user options in config'''
     
     if refFreq_data == 'diva': #find contemporary DIVA flood protection levels
-        qlats = [input_locations.lat.sel(locations=k).values for k in esl_statistics.keys()]
-        qlons = [input_locations.lon.sel(locations=k).values for k in esl_statistics.keys()]
+        qlats = input_locations.lat.sel(locations=esl_statistics.locations).values
+        qlons = input_locations.lon.sel(locations=esl_statistics.locations).values
         refFreqs = find_diva_protection_levels(qlons,qlats,path_to_refFreqs,15) #set these paths in config
     
     elif refFreq_data == 'flopros': #find contemporary FLOPROS flood protection levels
-        qlats = [input_locations.lat.sel(locations=k).values for k in esl_statistics.keys()]
-        qlons = [input_locations.lon.sel(locations=k).values for k in esl_statistics.keys()]
+        qlats = input_locations.lat.sel(locations=esl_statistics.locations).values
+        qlons = input_locations.lon.sel(locations=esl_statistics.locations).values
         
         refFreqs = find_flopros_protection_levels(qlons,qlats,path_to_refFreqs,15)    
     
@@ -118,106 +150,112 @@ def get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs=No
     return refFreqs
 
 def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
-    esl_statistics = {}
-    
     if input_data == 'hermans2023':
+        gpd_params = xr.open_dataset(data_path) #open GPD parameters
+        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)] #find ESL indices within radius of input locations if any
         
-        gpd_params = xr.open_dataset(data_path)
-        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
-        
-        if len(gpd_params.nboot) > n_samples:
+        if len(gpd_params.nboot) > n_samples: #determine which samples to select
             isamps = np.random.randint(0,len(gpd_params.nboot),n_samples)
         elif len(gpd_params.nboot) < n_samples:
             isamps = np.hstack((gpd_params.nboot.values,np.random.randint(0,len(gpd_params.nboot),n_samples-len(gpd_params.nboot))))
         else:
             isamps = gpd_params.nboot.values
-            
-        for i in np.arange(len(input_locations.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False: #if multiple input_locations within radius, pick the first (we don't have information about series length here)
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[input_locations.locations.values[i]] = {}
-                esl_statistics[input_locations.locations.values[i]]['loc'] = gpd_params.isel(site=min_idx[i]).location.values
-                esl_statistics[input_locations.locations.values[i]]['avg_extr_pyear'] = gpd_params.isel(site=min_idx[i]).avg_exceed.values
-                esl_statistics[input_locations.locations.values[i]]['scale_samples'] = gpd_params.isel(site=min_idx[i]).scale_samples.values[isamps]
-                esl_statistics[input_locations.locations.values[i]]['shape_samples'] = gpd_params.isel(site=min_idx[i]).shape_samples.values[isamps]
-                esl_statistics[input_locations.locations.values[i]]['scale'] = gpd_params.isel(site=min_idx[i]).scale_samples.values
-                esl_statistics[input_locations.locations.values[i]]['shape'] = gpd_params.isel(site=min_idx[i]).shape_samples.values
-            else:
+        
+        #generate lists with indices to keep
+        iLocations = [] 
+        iEsl = []
+        for i in np.arange(len(input_locations.locations)): #for each input location
+            if min_idx[i] is not None: #if nearby ESL information found
+                if np.isscalar(min_idx[i]) == False: #if multiple, pick the first (we don't have information about series length here)
+                    iEsl.append(min_idx[i][0])
+                else:
+                    iEsl.append(min_idx[i]) #if only one, use that
+                iLocations.append(i) #nearby ESL information for this site, so store site
+            else: #no nearby ESL information found
                 print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
                 continue
-            
+        
+        #put selected information in new dataset
+        esl_statistics = gpd_params.isel(site=iEsl).isel(nboot=isamps) #selected sites & samples
+        esl_statistics = esl_statistics.rename({'avg_exceed':'avg_extr_pyear','nboot':'samples','location':'loc','site':'locations'}) #rename some variables
+        esl_statistics = esl_statistics[['loc','avg_extr_pyear','scale','shape','scale_samples','shape_samples']]
+        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
+                                                       'lat':input_locations.isel(locations=iLocations).lat})
+        
     elif input_data == 'kirezci2020':
         from esl_analysis import infer_avg_extr_pyear
-        
         '''open GPD parameters from Kirezci et al. (2020) and find parameters nearest to queried input_locations'''
         gpd_params = pd.read_csv(data_path)
-        
+    
         min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     
-        for i in np.arange(len(input_locations.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False: #if multiple input_locations within radius, pick the first (we don't have information about series length here)
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[input_locations.locations.values[i]] = {}
-                esl_statistics[input_locations.locations.values[i]]['loc'] = gpd_params.iloc[min_idx[i]].GPDthresh
-                esl_statistics[input_locations.locations.values[i]]['scale'] = gpd_params.iloc[min_idx[i]].GPDscale
-                esl_statistics[input_locations.locations.values[i]]['shape'] = gpd_params.iloc[min_idx[i]].GPDshape
-                esl_statistics[input_locations.locations.values[i]]['avg_extr_pyear'] = infer_avg_extr_pyear(gpd_params.iloc[min_idx[i]].GPDthresh,
-                                                                                                   gpd_params.iloc[min_idx[i]].GPDscale,
-                                                                                                   gpd_params.iloc[min_idx[i]].GPDshape,
-                                                                                                   gpd_params.iloc[min_idx[i]].TWL,
-                                                                                                   1/100)
-            else:
+        #generate lists with indices to keep
+        iLocations = [] 
+        iEsl = []
+        for i in np.arange(len(input_locations.locations)): #for each input location
+            if min_idx[i] is not None: #if nearby ESL information found
+                if np.isscalar(min_idx[i]) == False: #if multiple, pick the first (we don't have information about series length here)
+                    iEsl.append(min_idx[i][0])
+                else:
+                    iEsl.append(min_idx[i]) #if only one, use that
+                iLocations.append(i) #nearby ESL information for this site, so store site
+            else: #no nearby ESL information found
                 print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
                 continue
-            
+ 
+              
+        esl_statistics = xr.Dataset(data_vars=dict(loc=(['locations'],gpd_params.iloc[iEsl].GPDthresh.values),
+                                                   scale=(['locations'],gpd_params.iloc[iEsl].GPDscale.values),
+                                                   shape=(['locations'],gpd_params.iloc[iEsl].GPDshape.values),
+                                                   avg_extr_pyear=(['locations'],
+                                                                   infer_avg_extr_pyear(gpd_params.iloc[iEsl].GPDthresh.values,
+                                                                                        gpd_params.iloc[iEsl].GPDscale.values,
+                                                                                        gpd_params.iloc[iEsl].GPDshape.values,
+                                                                                        gpd_params.iloc[iEsl].TWL.values,
+                                                                                        1/100)),))
+        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        
+        esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
+                                                       'lat':input_locations.isel(locations=iLocations).lat})    
     elif input_data == 'vousdoukas2018':
         from esl_analysis import infer_avg_extr_pyear
         '''open GPD parameters from Vousdoukas et al. (2018) and find parameters nearest to queried input_locations'''
-        gpd_params = xr.open_dataset(data_path)
+        gpd_params = xr.open_dataset(data_path).isel(rlyear=0,drop=True)
         
         min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     
-        for i in np.arange(len(input_locations.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False: #if multiple input_locations within radius, pick the first (we don't have information about series length here)
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[input_locations.locations.values[i]] = {}
-                esl_statistics[input_locations.locations.values[i]]['loc'] = gpd_params.isel(pt=min_idx[i]).thresholdParamGPD.item()
-                esl_statistics[input_locations.locations.values[i]]['scale'] = gpd_params.isel(pt=min_idx[i]).scaleParamGPD.item()
-                esl_statistics[input_locations.locations.values[i]]['shape'] = gpd_params.isel(pt=min_idx[i]).shapeParamGPD.item()
-                esl_statistics[input_locations.locations.values[i]]['avg_extr_pyear'] = infer_avg_extr_pyear(gpd_params.isel(pt=min_idx[i]).thresholdParamGPD.item(),
-                                                                                                   gpd_params.isel(pt=min_idx[i]).scaleParamGPD.item(),
-                                                                                                   gpd_params.isel(pt=min_idx[i]).shapeParamGPD.item(),
-                                                                                                   gpd_params.isel(pt=min_idx[i]).returnlevelGPD.isel(return_period=12).item(),
-                                                                                                   1/100)
-            else:
+        #generate lists with indices to keep
+        iLocations = [] 
+        iEsl = []
+        for i in np.arange(len(input_locations.locations)): #for each input location
+            if min_idx[i] is not None: #if nearby ESL information found
+                if np.isscalar(min_idx[i]) == False: #if multiple, pick the first (we don't have information about series length here)
+                    iEsl.append(min_idx[i][0])
+                else:
+                    iEsl.append(min_idx[i]) #if only one, use that
+                iLocations.append(i) #nearby ESL information for this site, so store site
+            else: #no nearby ESL information found
                 print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
                 continue
-            
-    elif input_data == 'codec_gumbel':
-        '''open Gumbel parameters from Muis et al. (2020) and find parameters nearest to queried input_locations'''
-        codec_gum = xr.open_dataset(data_path)
-        min_idx = [mindist(x,y,codec_gum['station_y_coordinate'].values,codec_gum['station_x_coordinate'].values, 0.2)[0] for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
         
-        for i in np.arange(len(input_locations.locations)):
-            if min_idx[i] is not None:
-                if np.isscalar(min_idx[i]) == False:
-                    min_idx[i] = min_idx[i][0]
-                esl_statistics[input_locations.locations.values[i]] = {}
-                esl_statistics[input_locations.locations.values[i]]['loc'] = codec_gum.isel(stations=min_idx[i]).GUM.values[0]
-                esl_statistics[input_locations.locations.values[i]]['scale'] = codec_gum.isel(stations=min_idx[i]).GUM.values[-1]
-            else:
-                print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
-                continue
+        esl_statistics = gpd_params.isel(pt=iEsl)
+        esl_statistics = esl_statistics.rename({'thresholdParamGPD':'loc','scaleParamGPD':'scale','shapeParamGPD':'shape','pt':'locations'})
+        esl_statistics['avg_extr_pyear'] = infer_avg_extr_pyear(esl_statistics['loc'],esl_statistics.scale,esl_statistics.shape,esl_statistics.returnlevelGPD.isel(return_period=12),1/100)
+        esl_statistics = esl_statistics[['loc','scale','shape','avg_extr_pyear']]
+        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
+                                                       'lat':input_locations.isel(locations=iLocations).lat})
     return esl_statistics
 
 
-
-def get_coast_rp_return_curves(input_dir,input_locations):
+#def if_scalar_to_list(variable):
+    
+    
+def get_coast_rp_return_curves(input_dir,input_locations,f):
     '''open return curves from Dulaart et al. (2021) and find curves nearest to queried input_locations'''
-    esl_statistics={}
+    zs = []
+    iLocations = []
     
     coast_rp_coords = pd.read_pickle(os.path.join(input_dir,'pxyn_coastal_points.xyn'))
     min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
@@ -240,12 +278,22 @@ def get_coast_rp_return_curves(input_dir,input_locations):
             except:
                 pass
         
-            esl_statistics[input_locations.locations.values[i]] = {}
-            esl_statistics[input_locations.locations.values[i]]['z_hist'] = np.flip(rc.index.values)
-            esl_statistics[input_locations.locations.values[i]]['f_hist'] = np.flip(1/rc.values) 
+            z_hist = np.flip(rc.index.values)
+            f_hist = np.flip(1/rc.values)
+        
+            z = np.interp(f,f_hist,z_hist,left=np.nan,right=np.nan)
+            
+            zs.append(z)
+            iLocations.append(i)
         else:
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
             continue
+        
+    esl_statistics = xr.Dataset(data_vars=dict(z_hist=(['locations','f'],np.stack(zs))),
+                                coords=dict(locations=input_locations.isel(locations=iLocations).locations,
+                                            f=f))
+    esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
+                                                   'lat':input_locations.isel(locations=iLocations).lat})
     return esl_statistics
 
 
@@ -262,7 +310,7 @@ def open_gtsm_waterlevels(gtsm_dir, input_locations):
             min_idx[k] = np.nan
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[k].values))
     gtsm = gtsm.isel(stations = np.array(min_idx)[np.isfinite(min_idx)].astype('int'))
-    gtsm = gtsm.rename({'stations':'locations'})
+    gtsm = gtsm.rename({'stations':'locations','station_x_coordinate':'lon','station_y_coordinate':'lat'})
     gtsm['locations'] = input_locations.locations[np.isfinite(min_idx)]
         
     gtsm = gtsm.load() #load data into memory
