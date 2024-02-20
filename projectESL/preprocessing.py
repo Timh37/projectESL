@@ -47,9 +47,9 @@ def readmeta_GESLA2(filename):
 	
     return (station_name, station_lat, station_lon, start_date, end_date)
 
-def extract_GESLA2_locations(cfg):
+def extract_GESLA2_locations(path_to_gesla2,min_yrs):
     '''Generate a list of the coordinates of all gesla2 files in "gesladir" '''
-    gesladir = cfg['input']['paths']['gesla2']
+    gesladir = path_to_gesla2
     # Get a list of the gesla database files
     geslafiles = os.listdir(gesladir)
     if '.DS_Store' in geslafiles:
@@ -65,7 +65,7 @@ def extract_GESLA2_locations(cfg):
         #Extract the station header information
         this_name, this_lat, this_lon, start_date, end_date = readmeta_GESLA2(os.path.join(gesladir, this_file))
         
-        if ((pd.to_datetime(end_date).year - pd.to_datetime(start_date).year) < cfg['preprocessing']['min_yrs']-1) or (pd.to_datetime(end_date).year<2000):
+        if ((pd.to_datetime(end_date).year - pd.to_datetime(start_date).year) < min_yrs-1) or (pd.to_datetime(end_date).year<2000):
             continue
         # append this information to appropriate lists
         station_names.append(this_name)	 
@@ -75,11 +75,11 @@ def extract_GESLA2_locations(cfg):
     
     return (station_names,station_lats,station_lons,station_filenames)
 
-def extract_GESLA3_locations(cfg):
+def extract_GESLA3_locations(path_to_gesla3,min_yrs):
     '''Generate a list of the coordinates of all gesla3 files in using the metadata at "metafile_path" '''
-    meta = pd.read_csv(os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv'))
+    meta = pd.read_csv(os.path.join(path_to_gesla3,'GESLA3_ALL.csv'))
     
-    meta = meta[(meta['GAUGE TYPE']=='Coastal') & (meta['OVERALL RECORD QUALITY']=='No obvious issues') & (meta['NUMBER OF YEARS'] >= cfg['preprocessing']['min_yrs']) & (pd.to_datetime(meta['END DATE/TIME'],format='mixed').dt.year>=2000)].reset_index(drop=True) #only consider coastal gauges without issues with sufficient length
+    meta = meta[(meta['GAUGE TYPE']=='Coastal') & (meta['OVERALL RECORD QUALITY']=='No obvious issues') & (meta['NUMBER OF YEARS'] >= min_yrs) & (pd.to_datetime(meta['END DATE/TIME'],format='mixed').dt.year>=2000)].reset_index(drop=True) #only consider coastal gauges without issues with sufficient length
     
     return (list(meta['SITE NAME']),list(meta['LATITUDE']),list(meta['LONGITUDE']),list(meta['FILE NAME']))
     
@@ -93,37 +93,32 @@ def get_data_starting_index(file_name):
                     break
         return i
 
-def reference_to_msl(cfg,data,fn):
+def reference_data_to_msl(period,data,fn):
     ''' subtract MSL during "MSL_period" from data if possible'''
-    if 'msl_period' in cfg['preprocessing']:
-        
-        years = cfg['preprocessing']['msl_period'].split(',')
-        y0 = years[0]
-        y1 = str(int(years[1])+1)
-        
-        data_in_msl_period = data[data.index.to_series().between(y0,y1)]
-      
-        if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)): #np.isnan(data_in_msl_period['sea_level']).all():
-            print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
-            vdatum = 'original'
-        else:    
-            msl = np.nanmean(data_in_msl_period['sea_level'])
-            data['sea_level'] = data['sea_level'] - msl
-            vdatum = 'MSL (' +y0+'-'+y1+')'
-    else: 
-        raise Exception('Could not reference observations to MSL because "msl_period" is undefined.')
-            
+    y0 = period[0]
+    y1 = str(int(period[1])+1)
+    
+    data_in_msl_period = data[data.index.to_series().between(y0,y1)]
+  
+    if len(np.unique(data_in_msl_period.index.date)) < 0.5 * 365.25 * (int(y1)-int(y0)):
+        print('Warning: Could not reference observations to MSL for {0} because observations are avaible on less than half of all days during "msl_period".'.format(fn))
+        vdatum = 'original'
+    else:    
+        msl = np.nanmean(data_in_msl_period['sea_level'])
+        data['sea_level'] = data['sea_level'] - msl
+        vdatum = 'MSL (' +y0+'-'+y1+')'
+   
     return data, vdatum
 
-def ingest_GESLA3_files(cfg,fns=None):
+def ingest_GESLA3_files(gesla3_path,preproc_settings,fns=None):
     '''open & preprocess files in list "fns" with type in "types" e.g., ['Coastal','River'] (as defined by GESLA) if fulfilling inclusion criteria set in cfg'''
-    path_to_files = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3.0_ALL')
+    path_to_files = os.path.join(gesla3_path,'GESLA3.0_ALL')
     path_to_files = os.path.join(path_to_files,'') #append '/'
     
-    meta_fn = os.path.join(cfg['input']['paths']['gesla3'],'GESLA3_ALL.csv')
+    meta_fn = os.path.join(gesla3_path,'GESLA3_ALL.csv')
     
-    resample_freq = cfg['preprocessing']['resample_freq']
-    min_yrs = cfg['preprocessing']['min_yrs']
+    resample_freq = preproc_settings['resample_freq']
+    min_yrs = preproc_settings['min_yrs']
     
     if not fns:
         fns = os.listdir(path_to_files) #if fns is undefined, try to read in all files
@@ -146,8 +141,8 @@ def ingest_GESLA3_files(cfg,fns=None):
         rawdata.loc[rawdata['use_flag']!=1,'sea_level'] = np.nan
   
         #compute MSL from raw data if referencing to MSL
-        if cfg['preprocessing']['ref_to_msl']:
-            rawdata,vdatum = reference_to_msl(cfg,rawdata,fn)
+        if preproc_settings['ref_to_msl']:
+            rawdata,vdatum = reference_data_to_msl(preproc_settings['msl_period'].split(','),rawdata,fn)
           
         resampled_data  = resample_data(rawdata,resample_freq)
         
@@ -168,13 +163,13 @@ def ingest_GESLA3_files(cfg,fns=None):
     return datasets
 
 
-def ingest_GESLA2_files(cfg,fns=None):
+def ingest_GESLA2_files(gesla2_path,preproc_settings,fns=None):
     '''open & preprocess files in list "fns" if fulfilling inclusion criteria set in cfg'''
-    path_to_files = cfg['input']['paths']['gesla2']
+    path_to_files = gesla2_path
     path_to_files = os.path.join(path_to_files,'') #append '/'
     
-    resample_freq = cfg['preprocessing']['resample_freq']
-    min_yrs = cfg['preprocessing']['min_yrs']
+    resample_freq = preproc_settings['resample_freq']
+    min_yrs = preproc_settings['min_yrs']
     
     if not fns:
         fns = os.listdir(path_to_files) #if fns is undefined, try to read in all files
@@ -216,8 +211,8 @@ def ingest_GESLA2_files(cfg,fns=None):
         data.loc[data['sea_level']<=-9.9,'sea_level'] = np.nan
         
         #compute MSL from raw data if referencing to MSL
-        if cfg['preprocessing']['ref_to_msl']:
-            data,vdatum = reference_to_msl(cfg,data,fn)
+        if preproc_settings['ref_to_msl']:
+            data,vdatum = reference_data_to_msl(preproc_settings['msl_period'].split(','),data,fn)
            
         resampled_data = resample_data(data,resample_freq)
         
