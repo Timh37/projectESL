@@ -9,6 +9,13 @@ import numpy as np
 import xarray as xr
 import os
 
+def if_scalar_to_list(variable):
+    if np.isscalar(variable):
+        variable_as_list = [variable]
+        return variable_as_list
+    else:
+        return variable
+
 def angdist(lat0, lon0, lat, lon):
 	'''calculate angular distance between coordinates (lat0,lon0) and (lat,lon)'''
 	# Convert the input from degrees to radians
