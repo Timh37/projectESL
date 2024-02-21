@@ -442,7 +442,7 @@ def gpd_Z_from_F_mhhw(scale,shape,loc,avg_exceed,f,mhhw):
         loc:            location parameter
         avg_exceed:     exceedance frequeny of location parameter (POT threshold)
         f:   sample frequencies to compute Z for
-        mhhw:           z corresponding to MHHW
+        mhhw:           z corresponding to MHHW (absolute?)
         mhhw_freq:      frequency corresponding to MHHW
     Output:
         z:              heights computed for sample frequencies, relative to location parameter 
@@ -473,7 +473,7 @@ def gpd_Z_from_F_mhhw(scale,shape,loc,avg_exceed,f,mhhw):
     z = np.where((shape*z/scale)<-1,np.nan,z)
     
     #below lower bound of GPD (F=avg_exceed for z->0 with z=z0-loc (z0->loc)), use Gumbel distribution
-    z[f>avg_exceed] = np.log(f[f>avg_exceed]/avg_exceed) * (mhhw-loc)/np.log((365.25/2)/avg_exceed) #lower bound of gumbel is z=z0-loc=(mhhw-loc), i.e. (loc-mhhw) below loc if mhhw follows from long-term mean of 2-day maximum
+    z[f>avg_exceed] = 0 + np.log(f[f>avg_exceed]/avg_exceed) * (mhhw-loc)/np.log((365.25/2)/avg_exceed) #lower bound of gumbel is z=z0-loc=(mhhw-loc), i.e. (loc-mhhw) below loc if mhhw follows from long-term mean of 2-day maximum
 
     #below lower bound of Gumbel?
     z = np.where(f>(365.25/2),np.nan,z) #where F>mhhwFreq, replace z by np.nan
@@ -527,9 +527,8 @@ def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
     #below lower bound of GPD (F=avg_exceed for z->0 with z=z0-loc (z0->loc)), use extrapolation
     z = np.where(f>avg_exceed,np.nan,z)
 
-    z_0p5 = gpd_Z_from_F(scale,shape,loc,avg_exceed,np.array([0.5])) #heights corresponding to 0.5/yr frequency
-    z_0p2 = gpd_Z_from_F(scale,shape,loc,avg_exceed,np.array([0.2])) #heights corresponding to 0.2/yr frequency
-    
+    z_0p5 = gpd_Z_from_F(scale,shape,loc,avg_exceed,np.array([0.5]))-loc #heights corresponding to 0.5/yr frequency
+    z_0p2 = gpd_Z_from_F(scale,shape,loc,avg_exceed,np.array([0.2]))-loc #heights corresponding to 0.2/yr frequency
     
     iXtrp = ((f>avg_exceed) & (f<=10)) #indices of frequencies to fill with extrapolation
     
