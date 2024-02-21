@@ -2,7 +2,7 @@ general:
     n_samples: 5000                                                             # number of monte carlo samples to use
     run_name: 'refExp_testing'
     output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output/TGs'      # existing directory to save the output in
-    output_quantiles: .05,.5,.95                                                # which quantiles of sample distributions to save
+    output_quantiles: .05,.5,.95                                                # which quantiles of sample distributions to save [between 0-1]
     use_central_esl_estimates_only: 0                                           # whether to ignore uncertainty in ESL statistics if provided (z_hist output quantiles will be identical)
     
 input:
@@ -38,8 +38,8 @@ preprocessing:                                                                # 
     
         
 projecting:                                                                  # set projection options
-    below_threshold: 'Sweet22'                                                     # ['mhhw','Sweet22',None] if/how to treat return frequencies/heights below extremes threshold. Default: None. No effect if using direct return curve input (e.g., COAST-RP).                                                             
-    refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
-    target_years: 2100                                                          # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections); leave empty for no output
-    target_AFs: 100                                                             # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for; leave empty for no output
-    target_freqs: 1                                                             # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for; leave empty for no output
+    below_threshold: 'None'                                                     # ['mhhw','Sweet22',None] if/how to treat return frequencies/heights below extremes threshold. Default: None. No effect if using direct return curve input (e.g., COAST-RP).                                                             
+    refFreqs: 'flopros'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
+    target_years: 2100,2150,2200,2250,2300                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections); leave empty for no output
+    target_AFs:                                                              # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for; leave empty for no output
+    target_freqs: 10                                                              # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for; leave empty for no output

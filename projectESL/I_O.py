@@ -113,16 +113,16 @@ def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_
     
     output_ds['z_hist'] = (['locations','qnt','f'],np.stack([k[0] for k in output]))
     
-    if target_years:
+    if len(target_years)>0:
         output_ds['z_fut'] = (['locations','qnt','f','target_year'],np.stack([k[1] for k in output]))
         output_ds['AF'] = (['locations','qnt','target_year'],np.stack([k[2] for k in output]))
         output_ds = output_ds.assign_coords({'target_year':target_years})
         
-    if target_AFs:
+    if len(target_AFs)>0:
         output_ds['AF_timing'] = (['locations','qnt','target_AF'],np.stack([k[4] for k in output]))
         output_ds = output_ds.assign_coords({'target_AF':target_AFs})
 
-    if target_freqs:
+    if len(target_freqs)>0:
         output_ds['f_timing'] = (['locations','qnt','target_f'],np.stack([k[5] for k in output]))
         output_ds = output_ds.assign_coords({'target_f':target_freqs})
     
