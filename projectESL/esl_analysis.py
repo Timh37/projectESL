@@ -544,6 +544,9 @@ def gpd_Z_from_F_Sweet22(scale,shape,loc,avg_exceed,f):
             z[iXtrp] = z_0p2+np.log(f[iXtrp]/0.2) * (0-z_0p2)/np.log(avg_exceed/0.2) #log-linear similar to Gumbel
         else:
             z[iXtrp] = z_0p2[iXtrp]+np.log(f[iXtrp]/0.2) * (0-z_0p2[iXtrp])/np.log(avg_exceed/0.2)
+    
+    if avg_exceed<=0.2:
+        print('Warning: "avg_extr_pyear" is equal to or less than 0.2/yr. Cannot extrapolate using the method of Sweet et al. (2022).')
     #return z #output relative to location parameter
     return z + loc #output relative to vertical datum
 

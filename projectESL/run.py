@@ -40,7 +40,7 @@ def get_ESL_statistics(esl_data,path_to_data,input_locations,preproc_settings=No
     return esl_statistics
 
 
-def compute_projectESL_output(loc,scale,shape,rate,cov,f,n_samples,refFreq,input_locations,out_qnts,target_years,target_AFs,target_freqs,z_hist=None):
+def compute_projectESL_output(loc,scale,shape,rate,cov,mhhw,f,below_threshold,n_samples,refFreq,input_locations,out_qnts,target_years,target_AFs,target_freqs,z_hist=None):
     if z_hist is not None: #if return curve already provided
         z = z_hist
         
@@ -49,9 +49,9 @@ def compute_projectESL_output(loc,scale,shape,rate,cov,f,n_samples,refFreq,input
             scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n_samples) 
         else: #use best estimates (means) or provided samples
             scale_samples,shape_samples = scale,shape #use central estimate scale & shape
-            
-        z= get_return_curve_gpd(f,scale_samples,shape_samples,loc,rate) #compute return curve samples
-    
+ 
+    z= get_return_curve_gpd(f,scale_samples,shape_samples,loc,rate,below_threshold,mhhw) #compute return curve samples
+       
     #compute quantiles of output:
     if z.ndim > 1:
         z_hist_quantiles = np.quantile(z,out_qnts,axis=-1) #dont have to use nanquantile, because either defined for all samples or for none
@@ -90,12 +90,12 @@ def compute_projectESL_output(loc,scale,shape,rate,cov,f,n_samples,refFreq,input
     return z_hist_quantiles,z_fut_quantiles,af_quantiles,max_af,af_timing_quantiles,f_timing_quantiles
 
 
-def project_ESLs_lazily(esl_statistics,f,n_samples,refFreqs,input_locations,out_qnts,target_years,target_AFs,target_freqs):
+def project_ESLs_lazily(esl_statistics,f,below_threshold,n_samples,refFreqs,input_locations,out_qnts,target_years,target_AFs,target_freqs):
     target_years = if_scalar_to_list(target_years)
     target_AFs = if_scalar_to_list(target_AFs)
     target_freqs = if_scalar_to_list(target_freqs)
     
-    locs = scales = shapes = rates = covs = z_hists = [None for k in esl_statistics.locations] #initialize input parameters for each location with None
+    locs = scales = shapes = rates = covs = mhhws = z_hists = [None for k in esl_statistics.locations] #initialize input parameters for each location with None
     
     if 'z_hist' in esl_statistics: #if return curves provided, use these as input
         z_hists = esl_statistics['z_hist'].values
@@ -112,13 +112,18 @@ def project_ESLs_lazily(esl_statistics,f,n_samples,refFreqs,input_locations,out_
         elif 'scale_samples' in esl_statistics and 'shape_samples' in esl_statistics: #if scale/shape samples provided directly
             scales = esl_statistics['scale_samples'].values
             shapes = esl_statistics['shape_samples'].values
-            
+         
+        if 'mhhw' in esl_statistics:
+            mhhws = esl_statistics['mhhw'].values
+        else:
+            if below_threshold == 'mhhw':
+                raise Exception('Cannot compute return heights below threshold using "mhhw" because MHHW value is not available from ESL data.')
     lazy_results=[]
     
     for l,location in enumerate(esl_statistics.locations):
         np.random.seed(0)
         lazy_result = dask.delayed(
-                            compute_projectESL_output)(locs[l],scales[l],shapes[l],rates[l],covs[l],f,n_samples,
+                            compute_projectESL_output)(locs[l],scales[l],shapes[l],rates[l],covs[l],mhhws[l],f,below_threshold,n_samples,
                                                        refFreqs[l],input_locations.sel(locations=location),out_qnts,
                                                        target_years,target_AFs,target_freqs,z_hists[l])
         lazy_results = np.append(lazy_results,lazy_result)
@@ -138,7 +143,11 @@ if __name__ == "__main__":
     esl_data                = cfg['input']['esl_data'] #type of ESL data to load/analyze
     out_qnts                = np.array(cfg['general']['output_quantiles'].split(',')).astype('float') #output quantiles to evaluate results at
     refFreq_data            = cfg['projecting']['refFreqs'] #type of refFreq data to load (or scalar to use at all locations)
+    below_threshold         = cfg['projecting']['below_threshold']
     
+    if below_threshold == 'None':
+        below_threshold = None
+        
     if refFreq_data in ['diva','flopros']:
         path_to_refFreqs    = cfg['input']['paths'][refFreq_data] #path to refFreqs if applicable
     
@@ -175,7 +184,7 @@ if __name__ == "__main__":
     if cfg['general']['use_central_esl_estimates_only']:
         esl_statistics=esl_statistics.drop(['cov','scale_samples','shape_samples'],errors='ignore')
         
-    output=dask.compute(*project_ESLs_lazily(esl_statistics,f,n_samples,refFreqs,
+    output=dask.compute(*project_ESLs_lazily(esl_statistics,f,below_threshold,n_samples,refFreqs,
                                          input_locations,out_qnts,target_years,target_AFs,target_freqs)) #compute output for each location in parallel
     
     output_ds = lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years,target_AFs,target_freqs) #convert output to xarray dataset
