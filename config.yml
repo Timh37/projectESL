@@ -35,9 +35,10 @@ preprocessing:                                                                # 
     declus_method: 'rolling_max'                                                # ['iterative_descending','rolling_max'] how to decluster the extremes
     declus_window: 3                                                            # [int] declustering window length to use
     extremes_threshold: 98                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
-    below_threshold: 'mhhw'                                                     # ['mhhw','Sweet','None'] how to treat events below threshold
+    
         
-projecting:                                                                   # set projection options
+projecting:                                                                  # set projection options
+    below_threshold: 'Sweet22'                                                     # ['mhhw','Sweet22',None] if/how to treat return frequencies/heights below extremes threshold. Default: None. No effect if using direct return curve input (e.g., COAST-RP).                                                             
     refFreqs: 'diva'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
     target_years: 2100                                                          # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections); leave empty for no output
     target_AFs: 100                                                             # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for; leave empty for no output
