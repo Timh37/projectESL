@@ -15,8 +15,8 @@ from preprocessing import detrend_ds, deseasonalize_ds, subtract_amean_from_ds
 from I_O import open_gtsm_waterlevels
 
 
-def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings):
-
+def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_dist_limit):
+    
     print('Warning: Several preprocessing options applicable to GESLA data are bypassed for analyzing GTSM data, such as minimum length, MSL reference, and modeling events below the GPD threshold.')
     
     assert ((preproc_settings['extremes_threshold']>0) & (preproc_settings['extremes_threshold']<100))
@@ -27,7 +27,7 @@ def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings):
         raise Exception('Configured declustering method not yet implemented.')      
     
     print('Opening GTSM timeseries near input_locations sites.')
-    gtsm = open_gtsm_waterlevels(gtsm_path,input_locations)
+    gtsm = open_gtsm_waterlevels(gtsm_path,input_locations,match_dist_limit)
     
     print('Preprocessing GTSM timeseries & finding extremes.')
     #preproc options:
@@ -62,11 +62,10 @@ def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings):
     esl_statistics['avg_extr_pyear'] = avg_extr_pyear
     esl_statistics = esl_statistics.drop(['gpd_params','params'])
     
-
     return esl_statistics
 
 
-def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc_settings,maxdist):
+def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc_settings,match_dist_limit):
     ''' For input_locations sites, try to find nearest GESLA record within "maxdist" that fulfills the criteria for being included set in "cfg".'''    
 
     #get GESLA locations
@@ -77,7 +76,7 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
     else:
         raise Exception('Data source not recognized.')
     
-    min_idx = [mindist(x,y,station_lats,station_lons,maxdist) for x,y in zip(input_locations.lat.values, input_locations.lon.values)] #sites within maximum distance from input_locations points
+    min_idx = [mindist(x,y,station_lats,station_lons,match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)] #sites within maximum distance from input_locations points
 
     matched_filenames = []
     sites_with_esl = []
@@ -91,7 +90,7 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
             
     # if no locations with esl data are found, quit with error
     if not matched_filenames:
-        raise Exception("Zero matches found within {} degrees for provided lat/lon list".format(maxdist))
+        raise Exception("Zero matches found within {} degrees for provided lat/lon list".format(match_dist_limit))
       
     # Initialize variables to track the files that have been tested
     pass_files = {}
@@ -145,7 +144,9 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
                 
                 esl_statistics[this_id] = gpd_params
                 esl_statistics[this_id]['vdatum'] = dfs[esl_file].attrs['vdatum']
-                
+                esl_statistics[this_id]['matched_lon'] = dfs[esl_file].attrs['longitude']
+                esl_statistics[this_id]['matched_lat'] = dfs[esl_file].attrs['latitude']
+                esl_statistics[this_id]['matched_id'] = esl_file
                 # This file passed, add it to the pass file dictionary
                 pass_files[str(esl_file)] = this_id
                 # This ID has data, set the flag to move onto the next ID
@@ -158,7 +159,7 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
     
         # Let the user know we didn't find a file that passes the data constraints
         if not this_id_passed:
-            print("No locations within {0} degrees pass the data constraints for ID {1}.".format(maxdist, this_id))
+            print("No locations within {0} degrees pass the data constraints for ID {1}.".format(match_dist_limit, this_id))
         
     if len(esl_statistics) == 0:
         raise Exception('Did not find any nearby records passing the data constraints.')

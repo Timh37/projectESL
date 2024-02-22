@@ -11,30 +11,29 @@ import xarray as xr
 import dask
 import os
 import numpy as np
-import warnings
 from I_O import load_config, get_refFreqs, open_input_locations, lazy_output_to_ds, esl_statistics_dict_to_ds, save_ds_to_netcdf
 from I_O import open_gpd_parameters,get_coast_rp_return_curves
 from esl_analysis import ESL_stats_from_raw_GESLA, ESL_stats_from_gtsm_dmax, multivariate_normal_gpd_samples_from_covmat, get_return_curve_gpd
 from projecting import compute_AFs, compute_AF_timing
 from utils import if_scalar_to_list
 
-def get_ESL_statistics(esl_data,path_to_data,input_locations,preproc_settings=None,n_samples=None,f=None):
+def get_ESL_statistics(esl_data,path_to_data,input_locations,match_dist_limit,preproc_settings=None,n_samples=None,f=None):
     print('Extracting ESL information for queried input locations...')
     esl_statistics = {} #initialize dictionary to hold ESL information
     esl_data = esl_data.lower()
     
     if esl_data in ['gesla2','gesla3']: #if using raw data from GESLA
-        esl_statistics = ESL_stats_from_raw_GESLA(esl_data,path_to_data,input_locations,preproc_settings,0.2) #dictionary output
+        esl_statistics = ESL_stats_from_raw_GESLA(esl_data,path_to_data,input_locations,preproc_settings,match_dist_limit) #dictionary output
         esl_statistics = esl_statistics_dict_to_ds(input_locations,esl_statistics)
         
     elif cfg['input']['esl_data'].lower() in ['gtsm_dmax']:
-        esl_statistics = ESL_stats_from_gtsm_dmax(path_to_data,input_locations,preproc_settings)
+        esl_statistics = ESL_stats_from_gtsm_dmax(path_to_data,input_locations,preproc_settings,match_dist_limit)
             
     elif cfg['input']['esl_data'].lower() in ['hermans2023','kirezci2020','vousdoukas2018','gtsm_dmax_gpd']:
-        esl_statistics = open_gpd_parameters(esl_data,path_to_data,input_locations,n_samples)
+        esl_statistics = open_gpd_parameters(esl_data,path_to_data,input_locations,n_samples,match_dist_limit)
             
     elif cfg['input']['esl_data'].lower() == 'coast-rp': # Option C: read in pre-defined return curves         
-        esl_statistics = get_coast_rp_return_curves(path_to_data,input_locations,f)
+        esl_statistics = get_coast_rp_return_curves(path_to_data,input_locations,f,match_dist_limit)
     else:
         raise Exception('ESL input data type not recognized.')
     return esl_statistics
@@ -46,11 +45,11 @@ def compute_projectESL_output(loc,scale,shape,rate,cov,mhhw,f,below_threshold,n_
         
     else: #derive return curves from GPD samples
         if cov is not None: #generate scale and shape samples
-            scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n_samples) 
+            scale_samples,shape_samples = multivariate_normal_gpd_samples_from_covmat(scale,shape,cov,n_samples,0) 
         else: #use best estimates (means) or provided samples
             scale_samples,shape_samples = scale,shape #use central estimate scale & shape
  
-    z= get_return_curve_gpd(f,scale_samples,shape_samples,loc,rate,below_threshold,mhhw) #compute return curve samples
+        z= get_return_curve_gpd(f,scale_samples,shape_samples,loc,rate,below_threshold,mhhw) #compute return curve samples
        
     #compute quantiles of output:
     if z.ndim > 1:
@@ -117,11 +116,11 @@ def project_ESLs_lazily(esl_statistics,f,below_threshold,n_samples,refFreqs,inpu
             mhhws = esl_statistics['mhhw'].values
         else:
             if below_threshold == 'mhhw':
-                raise Exception('Cannot compute return heights below threshold using "mhhw" because MHHW value is not available from ESL data.')
+                print('Warning: cannot compute return heights below threshold using "mhhw" because MHHW value is not available from ESL data. Continuing without modeling below threshold.')
+                below_threshold = None
     lazy_results=[]
     
     for l,location in enumerate(esl_statistics.locations):
-        np.random.seed(0)
         lazy_result = dask.delayed(
                             compute_projectESL_output)(locs[l],scales[l],shapes[l],rates[l],covs[l],mhhws[l],f,below_threshold,n_samples,
                                                        refFreqs[l],input_locations.sel(locations=location),out_qnts,
@@ -144,7 +143,7 @@ if __name__ == "__main__":
     out_qnts                = np.array(cfg['general']['output_quantiles'].split(',')).astype('float') #output quantiles to evaluate results at
     refFreq_data            = cfg['projecting']['refFreqs'] #type of refFreq data to load (or scalar to use at all locations)
     below_threshold         = cfg['projecting']['below_threshold']
-    
+    match_dist_limit        = cfg['input']['match_dist_limit']
     if below_threshold == 'None':
         below_threshold = None
         
@@ -171,11 +170,11 @@ if __name__ == "__main__":
         
     #open input locations
     input_locations = open_input_locations(cfg['input']['paths']['input_locations'],n_samples)
-    input_locations = input_locations.isel(locations = np.where(np.isfinite(input_locations.sea_level_change.isel(years=0,samples=0)))[0])#temporary, fix nans in nearest interpolation from full gridded samples
-    input_locations = input_locations.isel(locations=np.arange(5)) #for testing
+    #input_locations = input_locations.isel(locations = np.where(np.isfinite(input_locations.sea_level_change.isel(years=0,samples=0)))[0])#temporary, fix nans in nearest interpolation from full gridded samples
     
     ### fitting stage
-    esl_statistics = get_ESL_statistics(esl_data,cfg['input']['paths'][esl_data],input_locations,cfg['preprocessing'],n_samples,f)  #get ESL information at input locations
+    esl_statistics = get_ESL_statistics(esl_data,cfg['input']['paths'][esl_data],input_locations,match_dist_limit,cfg['preprocessing'],n_samples,f)  #get ESL information at input locations
+    esl_statistics.attrs['cfg'] = str(cfg)
     save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),esl_statistics,'esl_statistics.nc') #store
     
     ### projecting stage
@@ -188,8 +187,41 @@ if __name__ == "__main__":
                                          input_locations,out_qnts,target_years,target_AFs,target_freqs)) #compute output for each location in parallel
     
     output_ds = lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years,target_AFs,target_freqs) #convert output to xarray dataset
+    output_ds['refFreq'] = (['locations'],refFreqs)
+    output_ds.attrs['cfg'] = str(cfg)
+    
     save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),esl_statistics,'projectESL_output.nc') #store
 
     cluster.close()
+    '''
+    import matplotlib.pyplot as plt
+  
+    plt.figure()
+    ax = plt.subplot(211)
+    output_ds.isel(locations=0).z_hist.plot.line(x='f',ax=ax)
+    output_ds.isel(locations=0).z_fut.sel(target_year=2100).plot.line(x='f',ax=ax,color='blue')
+    ax.set_xscale('log')
+    ax.set_xlabel('Return frequency [1/yr]')
+    ax.set_ylabel('Return height [m]')
+    ax.axvline(x=output_ds.isel(locations=0).refFreq,color='grey',linestyle='dashed')
+    ax.axvline(x=output_ds.isel(locations=0).refFreq * output_ds.isel(locations=0,target_year=-1).AF.values[0],color='grey',linestyle='dotted')
+    ax.axvline(x=output_ds.isel(locations=0).refFreq * output_ds.isel(locations=0,target_year=-1).AF.values[1],color='grey',linestyle='dotted')
+    ax.axvline(x=output_ds.isel(locations=0).refFreq * output_ds.isel(locations=0,target_year=-1).AF.values[2],color='grey',linestyle='dotted')
     
-   
+    ax = plt.subplot(212)
+    input_locations.sea_level_change.load().isel(locations=0).quantile(out_qnts,dim='samples').plot.line(x='years',ax=ax)
+    
+    plt.figure()
+    plt.plot(output_ds.isel(locations=0).z_hist.isel(qnt=1),f,color='black')
+    plt.plot(output_ds.isel(locations=0).z_hist.isel(qnt=0),f,color='black',linestyle='dashed')
+    plt.plot(output_ds.isel(locations=0).z_hist.isel(qnt=-1),f,color='black',linestyle='dashed')
+    
+    plt.plot(output_ds.isel(locations=0).z_fut.isel(qnt=1).sel(target_year=2100),f,color='red')
+    plt.plot(output_ds.isel(locations=0).z_fut.isel(qnt=0).sel(target_year=2100),f,color='red',linestyle='dashed')
+    plt.plot(output_ds.isel(locations=0).z_fut.isel(qnt=-1).sel(target_year=2100),f,color='red',linestyle='dashed')
+    plt.axhline(y=1e-2)
+    plt.axhline(y=1e-3)
+    plt.yscale('log')
+    plt.ylim([1e-6,1e2])
+    plt.xlim([0,6])
+    '''

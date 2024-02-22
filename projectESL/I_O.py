@@ -89,6 +89,9 @@ def esl_statistics_dict_to_ds(input_locations,esl_statistics):
         lon=(['locations'], input_locations.sel(locations=list(esl_statistics.keys())).lon.values),
         lat=(['locations'], input_locations.sel(locations=list(esl_statistics.keys())).lat.values),
         locations=input_locations.sel(locations=list(esl_statistics.keys())).locations.values,
+        matched_lon=(['locations'], [v['matched_lon'].values[0] for k,v in esl_statistics.items()]),
+        matched_lat=(['locations'], [v['matched_lat'].values[0] for k,v in esl_statistics.items()]),
+        matched_id=(['locations'], [v['matched_id'].values[0] for k,v in esl_statistics.items()]),
     ),
     )
    
@@ -96,7 +99,11 @@ def esl_statistics_dict_to_ds(input_locations,esl_statistics):
         ds['mhhw'] = (['locations'], [v['mhhw'].values[0] for k,v in esl_statistics.items()]) #mhhw is optional in esl_statistics
     except:
         pass
-        
+    
+    try:
+        ds['vdatum'] = (['locations'],[v['vdatum'].values[0] for k,v in esl_statistics.items()])
+    except:
+        pass
     return ds
 
 def save_ds_to_netcdf(output_path,ds,fn):
@@ -109,7 +116,9 @@ def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_
     output_ds = xr.Dataset(data_vars=dict(),
                            coords=dict(f=(['f'],f),
                                        qnt = (out_qnts),
-                                       locations = esl_statistics.locations))
+                                       locations = esl_statistics.locations,
+                                       lon = esl_statistics.lon,
+                                       lat = esl_statistics.lat))
     
     output_ds['z_hist'] = (['locations','qnt','f'],np.stack([k[0] for k in output]))
     
@@ -149,10 +158,10 @@ def get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs=No
             
     return refFreqs
 
-def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
+def open_gpd_parameters(input_data,data_path,input_locations,n_samples,match_dist_limit):
     if input_data == 'hermans2023':
         gpd_params = xr.open_dataset(data_path) #open GPD parameters
-        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)] #find ESL indices within radius of input locations if any
+        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)] #find ESL indices within radius of input locations if any
         
         if len(gpd_params.nboot) > n_samples: #determine which samples to select
             isamps = np.random.randint(0,len(gpd_params.nboot),n_samples)
@@ -181,14 +190,17 @@ def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
         esl_statistics = esl_statistics[['loc','avg_extr_pyear','scale','shape','scale_samples','shape_samples']]
         esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
         esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
-                                                       'lat':input_locations.isel(locations=iLocations).lat})
+                                                       'lat':input_locations.isel(locations=iLocations).lat,
+                                                       'matched_lon':('locations',gpd_params.isel(site=iEsl).lon.values),
+                                                       'matched_lat':('locations',gpd_params.isel(site=iEsl).lat.values),
+                                                       'matched_id':('locations',gpd_params.isel(site=iEsl).site.values)})
         
     elif input_data == 'kirezci2020':
         from esl_analysis import infer_avg_extr_pyear
         '''open GPD parameters from Kirezci et al. (2020) and find parameters nearest to queried input_locations'''
         gpd_params = pd.read_csv(data_path)
     
-        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
+        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values,match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     
         #generate lists with indices to keep
         iLocations = [] 
@@ -217,13 +229,16 @@ def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
         esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
         
         esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
-                                                       'lat':input_locations.isel(locations=iLocations).lat})    
+                                                       'lat':input_locations.isel(locations=iLocations).lat,
+                                                       'matched_lon':('locations',gpd_params.iloc[iEsl].lon.values),
+                                                       'matched_lat':('locations',gpd_params.iloc[iEsl].lat.values),
+                                                       'matched_id':('locations',iEsl)})    
     elif input_data == 'vousdoukas2018':
         from esl_analysis import infer_avg_extr_pyear
         '''open GPD parameters from Vousdoukas et al. (2018) and find parameters nearest to queried input_locations'''
         gpd_params = xr.open_dataset(data_path).isel(rlyear=0,drop=True)
         
-        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
+        min_idx = [mindist(x,y,gpd_params.lat.values,gpd_params.lon.values,match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     
         #generate lists with indices to keep
         iLocations = [] 
@@ -239,11 +254,17 @@ def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
                 print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
                 continue
         
-        esl_statistics = gpd_params.isel(pt=iEsl)
-        esl_statistics = esl_statistics.rename({'thresholdParamGPD':'loc','scaleParamGPD':'scale','shapeParamGPD':'shape','pt':'locations'})
+        gpd_params = gpd_params.rename({'thresholdParamGPD':'loc','scaleParamGPD':'scale','shapeParamGPD':'shape','npt':'locations','pt':'locations'})
+        esl_statistics = gpd_params.isel(locations=iEsl)
+        matched_ids = esl_statistics.locations.values
+        
+        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        esl_statistics = esl_statistics.assign_coords({'matched_id':('locations',matched_ids),
+                                                       'matched_lon':('locations',esl_statistics.lon.values),
+                                                       'matched_lat':('locations',esl_statistics.lat.values)})
         esl_statistics['avg_extr_pyear'] = infer_avg_extr_pyear(esl_statistics['loc'],esl_statistics.scale,esl_statistics.shape,esl_statistics.returnlevelGPD.isel(return_period=12),1/100)
         esl_statistics = esl_statistics[['loc','scale','shape','avg_extr_pyear']]
-        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        
         esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
                                                        'lat':input_locations.isel(locations=iLocations).lat})
     return esl_statistics
@@ -252,13 +273,14 @@ def open_gpd_parameters(input_data,data_path,input_locations,n_samples):
 #def if_scalar_to_list(variable):
     
     
-def get_coast_rp_return_curves(input_dir,input_locations,f):
+def get_coast_rp_return_curves(input_dir,input_locations,f,match_dist_limit):
     '''open return curves from Dulaart et al. (2021) and find curves nearest to queried input_locations'''
     zs = []
     iLocations = []
+    iMatched = []
     
     coast_rp_coords = pd.read_pickle(os.path.join(input_dir,'pxyn_coastal_points.xyn'))
-    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values, 0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
+    min_idx = [mindist(x,y,coast_rp_coords['lat'].values,coast_rp_coords['lon'].values,match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     #use a slightly larger distance tolerance here because GTSM output is used at locations every 25 km along the global coastline (Dullart et al., 2021).
     
     for i in np.arange(len(input_locations.locations)):
@@ -285,6 +307,7 @@ def get_coast_rp_return_curves(input_dir,input_locations,f):
             
             zs.append(z)
             iLocations.append(i)
+            iMatched.append(min_idx[i])
         else:
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[i].values))
             continue
@@ -292,26 +315,32 @@ def get_coast_rp_return_curves(input_dir,input_locations,f):
     esl_statistics = xr.Dataset(data_vars=dict(z_hist=(['locations','f'],np.stack(zs))),
                                 coords=dict(locations=input_locations.isel(locations=iLocations).locations,
                                             f=f))
-    esl_statistics = esl_statistics.assign_coords({'lon':input_locations.isel(locations=iLocations).lon,
+    esl_statistics = esl_statistics.assign_coords({'matched_lon':('locations',coast_rp_coords.iloc[iMatched].lon.values),
+                                                   'matched_lat':('locations',coast_rp_coords.iloc[iMatched].lat.values),
+                                                   'matched_id':('locations',coast_rp_coords.iloc[iMatched].station.values),
+                                                    'lon':input_locations.isel(locations=iLocations).lon,
                                                    'lat':input_locations.isel(locations=iLocations).lat})
+    
     return esl_statistics
 
 
-def open_gtsm_waterlevels(gtsm_dir, input_locations):
+def open_gtsm_waterlevels(gtsm_dir, input_locations, match_dist_limit):
     gtsm = xr.open_mfdataset(os.path.join(gtsm_dir,'*.nc')) #assumes daily maxima in similar file structure as original CDS download
     gtsm_lats = gtsm.station_y_coordinate.values
     gtsm_lons = gtsm.station_x_coordinate.values
     
-    min_idx = [mindist(x,y,gtsm_lats,gtsm_lons,0.2) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
+    min_idx = [mindist(x,y,gtsm_lats,gtsm_lons,match_dist_limit) for x,y in zip(input_locations.lat.values, input_locations.lon.values)]
     for k in np.arange(len(input_locations.locations)):
         if min_idx[k] is not None:
             min_idx[k] = min_idx[k][0]
         else:
             min_idx[k] = np.nan
             print("Warning: No nearby ESL information found for {0}. Skipping site.".format(input_locations.locations[k].values))
+    matched_ids = gtsm.stations.values[np.array(min_idx)[np.isfinite(min_idx)].astype('int')]
     gtsm = gtsm.isel(stations = np.array(min_idx)[np.isfinite(min_idx)].astype('int'))
-    gtsm = gtsm.rename({'stations':'locations','station_x_coordinate':'lon','station_y_coordinate':'lat'})
-    gtsm['locations'] = input_locations.locations[np.isfinite(min_idx)]
+    gtsm = gtsm.rename({'stations':'locations','station_x_coordinate':'matched_lon','station_y_coordinate':'matched_lat'})
+    gtsm = gtsm.assign_coords({'matched_id':('locations',matched_ids),'lon':input_locations.lon[np.isfinite(min_idx)],'lat':input_locations.lat[np.isfinite(min_idx)]})
+    gtsm['locations'] =  input_locations.locations[np.isfinite(min_idx)]
         
     gtsm = gtsm.load() #load data into memory
     
