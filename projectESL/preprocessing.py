@@ -143,7 +143,8 @@ def ingest_GESLA3_files(gesla3_path,preproc_settings,fns=None):
         #compute MSL from raw data if referencing to MSL
         if preproc_settings['ref_to_msl']:
             rawdata,vdatum = reference_data_to_msl(preproc_settings['msl_period'].split(','),rawdata,fn)
-          
+        else:
+            vdatum = 'original'  
         resampled_data  = resample_data(rawdata,resample_freq)
         
         #do not include data if shorter than minimum years of observations
@@ -213,7 +214,8 @@ def ingest_GESLA2_files(gesla2_path,preproc_settings,fns=None):
         #compute MSL from raw data if referencing to MSL
         if preproc_settings['ref_to_msl']:
             data,vdatum = reference_data_to_msl(preproc_settings['msl_period'].split(','),data,fn)
-           
+        else:
+            vdatum = 'original'
         resampled_data = resample_data(data,resample_freq)
         
         #do not include data if shorter than minimum years of observations
