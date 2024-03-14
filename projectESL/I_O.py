@@ -287,11 +287,12 @@ def get_coast_rp_return_curves(input_dir,input_locations,f,match_dist_limit):
         if min_idx[i] is not None:
             if np.isscalar(min_idx[i]) == False: #if multiple input_locations within radius, pick the first (we don't have information about series length here)
                 min_idx[i] = min_idx[i][0]
-            this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name))
-            if int(coast_rp_coords.iloc[min_idx[i]].name)<10000:
-                this_id = '0'+this_id
-           
-            rc = pd.read_pickle(os.path.join(input_dir,'rp_full_empirical_station_'+this_id+'.pkl'))
+            this_id = str(int(coast_rp_coords.iloc[min_idx[i]].name)).rjust(5,'0')
+            try:
+                rc = pd.read_pickle(os.path.join(input_dir,'rp_full_empirical_station_'+this_id+'.pkl'))
+            except:
+                print("Warning: Could not open {0}. Skipping site.".format('rp_full_empirical_station_'+this_id+'.pkl'))
+                continue
             rc =rc['rp'][np.isfinite(rc['rp'])]
             #in some cases coast rp RPs can be non-monotonically increasing, for low heights if tcs defined where etcs not defined; we don't want to use this part
             d = np.where(np.diff(rc)<0)[0]#find where not increasing
