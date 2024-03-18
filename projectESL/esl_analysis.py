@@ -152,6 +152,8 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
                 # This ID has data, set the flag to move onto the next ID
                 this_id_passed = True
     			
+                #possibly future work: code an optional storage of the extremes here, probabily useful
+                
             except:
                 # This file failed, add it to the fail list and continue with the next file
                 fail_files.append(str(esl_file))

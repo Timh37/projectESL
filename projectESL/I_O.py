@@ -111,7 +111,7 @@ def save_ds_to_netcdf(output_path,ds,fn):
         os.mkdir(output_path)
     return ds.to_netcdf(os.path.join(output_path,fn),mode='w')
 
-def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_AFs=None,target_freqs=None):
+def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_AFs=None,target_freqs=None): #may need to find a better name?
     
     output_ds = xr.Dataset(data_vars=dict(),
                            coords=dict(f=(['f'],f),
@@ -143,13 +143,13 @@ def get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs=No
     if refFreq_data == 'diva': #find contemporary DIVA flood protection levels
         qlats = input_locations.lat.sel(locations=esl_statistics.locations).values
         qlons = input_locations.lon.sel(locations=esl_statistics.locations).values
-        refFreqs = find_diva_protection_levels(qlons,qlats,path_to_refFreqs,15) #set these paths in config
+        refFreqs = find_diva_protection_levels(qlons,qlats,path_to_refFreqs,10) #set these paths in config
     
     elif refFreq_data == 'flopros': #find contemporary FLOPROS flood protection levels
         qlats = input_locations.lat.sel(locations=esl_statistics.locations).values
         qlons = input_locations.lon.sel(locations=esl_statistics.locations).values
         
-        refFreqs = find_flopros_protection_levels(qlons,qlats,path_to_refFreqs,15)    
+        refFreqs = find_flopros_protection_levels(qlons,qlats,path_to_refFreqs,10)    
     
     elif np.isscalar(refFreq_data): #use constant reference frequency for every location
             refFreqs = np.tile(refFreq_data,len(esl_statistics))
@@ -258,7 +258,7 @@ def open_gpd_parameters(input_data,data_path,input_locations,n_samples,match_dis
         esl_statistics = gpd_params.isel(locations=iEsl)
         matched_ids = esl_statistics.locations.values
         
-        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations
+        esl_statistics['locations'] = input_locations.isel(locations=iLocations).locations.values
         esl_statistics = esl_statistics.assign_coords({'matched_id':('locations',matched_ids),
                                                        'matched_lon':('locations',esl_statistics.lon.values),
                                                        'matched_lat':('locations',esl_statistics.lat.values)})

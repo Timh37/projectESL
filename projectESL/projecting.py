@@ -5,7 +5,7 @@ t(dot)h(dot)j(dot)hermans@uu(dot)nl
 import numpy as np
 import geopandas as geopd
 from shapely.geometry import Point
-from utils import angdist
+from utils import kmdist
 from tqdm import tqdm
 import os
 from openpyxl import load_workbook
@@ -103,8 +103,8 @@ def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
         p = Point(qlon,qlat) #put coords into point geometry
         
         #do a first filtering based on angular distance to segment/polygon center points (more efficient than shapely distance)
-        angdists = angdist(qlat,qlon,latc,lonc)
-        nearby = np.where(angdists<5)[0]
+        kmdists = kmdist(qlat,qlon,latc,lonc)
+        nearby = np.where(kmdists<50)[0]
         if len(nearby)==0:
             nearest_segments.append(np.nan)
             #add a warning?
@@ -157,8 +157,8 @@ def find_diva_protection_levels(qlons,qlats,diva_fn,maxdist):
         p = Point(qlon,qlat) #put coords into point geometry
         
         #do a first filtering based on angular distance to segment/polygon center points (more efficient than shapely distance)
-        angdists = angdist(qlat,qlon,diva.lati.values,diva.longi.values)
-        nearby = np.where(angdists<5)[0]
+        kmdists = kmdist(qlat,qlon,diva.lati.values,diva.longi.values)
+        nearby = np.where(kmdists<50)[0]
         if len(nearby)==0:
             nearest_segments.append(np.nan)
             #add a warning?

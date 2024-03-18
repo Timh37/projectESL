@@ -16,6 +16,16 @@ def if_scalar_to_list(variable):
     else:
         return variable
 
+def kmdist(qlat,qlon,lats,lons):
+    
+    distances = np.zeros(len(lons)) #initialize array
+    
+    distances = distances + 2*np.arcsin( np.sqrt(
+            np.sin( (np.pi/180) * 0.5*(lats-qlat) )**2 +
+            np.cos((np.pi/180)*qlat)*np.cos((np.pi/180)*lats)*np.sin((np.pi/180)*0.5*(lons-qlon))**2) )
+    
+    return distances*6371
+
 def angdist(lat0, lon0, lat, lon):
 	'''calculate angular distance between coordinates (lat0,lon0) and (lat,lon)'''
 	# Convert the input from degrees to radians
@@ -30,10 +40,10 @@ def angdist(lat0, lon0, lat, lon):
 	# Convert the results from radians to degrees and return
 	return(np.degrees(temp))
 
-def mindist(qlat, qlon, lats, lons, limit=0.1):
-	'''find indices of the smallest distances between (qlat,qlon) and (lats,lons) within angular distance limit "limit" '''
+def mindist(qlat, qlon, lats, lons, limit=10):
+	'''find indices of the smallest distances between (qlat,qlon) and (lats,lons) within kilometric distance limit "limit" '''
 	# Calculate the angular distance
-	dist = angdist(lats, lons, qlat, qlon)
+	dist = kmdist(lats, lons, qlat, qlon)
 	
 	# If the minimum distance is beyond the limit, print a warning and return None
 	if(np.amin(dist) > limit):
@@ -73,7 +83,7 @@ def add_ar6_full_sample_projections_to_locations(input_locations,slr_fn,nsamps,p
     slr_lats = ds_stacked.lat.values
     
     mask = np.isnan(ds.isel(years=0,samples=0).sea_level_change).stack(locations=['lon','lat']).values #get land mask
-    min_idx = [np.argmin(angdist(qlat,qlon,slr_lats,slr_lons)+999*mask) for qlat,qlon in zip(input_locations.lat.values, input_locations.lon.values)] #get nearest projections to input_locations, don't use land
+    min_idx = [np.argmin(kmdist(qlat,qlon,slr_lats,slr_lons)+999*mask) for qlat,qlon in zip(input_locations.lat.values, input_locations.lon.values)] #get nearest projections to input_locations, don't use land
 
     ds_at_input_locations = ds_stacked.isel(locations=min_idx).drop('lat') #drop multiindex
     ds_at_input_locations['locations']=input_locations['locations'].values #assign locations from input_locations file
