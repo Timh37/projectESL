@@ -190,7 +190,7 @@ if __name__ == "__main__":
     output_ds['refFreq'] = (['locations'],refFreqs)
     output_ds.attrs['cfg'] = str(cfg)
     
-    save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),esl_statistics,'projectESL_output.nc') #store
+    save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),output_ds,'projectESL_output.nc') #store
 
     cluster.close()
     '''
