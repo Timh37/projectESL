@@ -17,10 +17,11 @@ def if_scalar_to_list(variable):
         return variable
 
 def kmdist(qlat,qlon,lats,lons):
-    
-    distances = np.zeros(len(lons)) #initialize array
-    
-    distances = distances + 2*np.arcsin( np.sqrt(
+    qlat = np.array(qlat)
+    qlon = np.array(qlon)
+    lats = np.array(lats)
+    lons = np.array(lons)
+    distances = 2*np.arcsin( np.sqrt(
             np.sin( (np.pi/180) * 0.5*(lats-qlat) )**2 +
             np.cos((np.pi/180)*qlat)*np.cos((np.pi/180)*lats)*np.sin((np.pi/180)*0.5*(lons-qlon))**2) )
     
