@@ -13,9 +13,9 @@ from preprocessing import extract_GESLA2_locations, extract_GESLA3_locations, in
 from preprocessing import detrend_gesla_dfs, deseasonalize_gesla_dfs, subtract_amean_from_gesla_dfs
 from preprocessing import detrend_ds, deseasonalize_ds, subtract_amean_from_ds
 from I_O import open_gtsm_waterlevels
+import os
 
-
-def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_dist_limit):
+def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_dist_limit,output_dir=None):
     
     print('Warning: Several preprocessing options applicable to GESLA data are bypassed for analyzing GTSM data, such as minimum length, MSL reference, and modeling events below the GPD threshold.')
     
@@ -41,7 +41,10 @@ def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_di
     threshold= gtsm.waterlevel.quantile(preproc_settings['extremes_threshold']/100,dim='time')
     extremes = gtsm.waterlevel.where(gtsm.waterlevel>=threshold)
     extremes_declustered = extremes.where((extremes==extremes.rolling(time=preproc_settings['declus_window'],center=True,min_periods=1).max()) & (np.isfinite(extremes))) #note this only works if resolution is daily!!
-
+    
+    if preproc_settings['store_esls']:
+        extremes_declustered.to_netcdf(os.path.join(output_dir,'GTSM_dmax_declustered_extremes.nc'),mode='w')
+            
     avg_extr_pyear = 365.25 * np.isfinite(extremes_declustered).sum(dim='time')/len(gtsm.time)
     
     print('Fitting GPD to extremes.')
@@ -65,7 +68,7 @@ def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_di
     return esl_statistics
 
 
-def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc_settings,match_dist_limit):
+def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc_settings,match_dist_limit,output_dir=None):
     ''' For input_locations sites, try to find nearest GESLA record within "maxdist" that fulfills the criteria for being included set in "cfg".'''    
 
     #get GESLA locations
@@ -97,6 +100,10 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
     fail_files = []
     esl_statistics = {}	
     
+    if preproc_settings['store_esls']:
+        if os.path.exists(os.path.join(output_dir,'ESLs')) == False:
+            os.mkdir(os.path.join(output_dir,'ESLs'))
+
     # Loop over the matched files
     print('Analyzing GESLA records.')
     for i in tqdm(np.arange(len(sites_with_esl))): #loop over sea-level projection sites with matched ESL data
@@ -140,6 +147,11 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
                     dfs = subtract_amean_from_gesla_dfs(dfs)
                 
                 extremes = pot_extremes_from_gesla_dfs(dfs,preproc_settings['extremes_threshold'],preproc_settings['declus_method'],preproc_settings['declus_window'])
+                
+                if preproc_settings['store_esls']:
+                    for k,v in extremes.items():
+                        v.to_csv(os.path.join(output_dir,'ESLs',k+'_extremes.csv'))
+                        
                 gpd_params = fit_gpd_to_gesla_extremes(extremes)
                 
                 esl_statistics[this_id] = gpd_params
