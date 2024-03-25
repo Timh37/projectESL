@@ -1,17 +1,17 @@
 general:
-    n_samples: 5000                                                             # number of monte carlo samples to use
-    run_name: 'refExp_testing'
-    output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output/TGs'      # existing directory to save the output in
+    n_samples: 10000                                                            # number of monte carlo samples to use
+    run_name: 'test'
+    output_dir: '/Users/timhermans/Documents/GitHub/projectESL/output/TGs' # existing directory to save the output in
     output_quantiles: .05,.5,.95                                                # which quantiles of sample distributions to save [between 0-1]
-    use_central_esl_estimates_only: 0                                           # whether to ignore uncertainty in ESL statistics if provided (z_hist output quantiles will be identical)
+    use_central_esl_estimates_only: 1                                           # whether to ignore uncertainty in ESL statistics if provided (z_hist output quantiles will be identical)
     
 input:
-    esl_data: 'gesla3'                                                          # options: ['gesla2','gesla3','gtsm_dmax'] (raw data); ['vousdoukas2018','kirezci2020','hermans2023'] (GPD parameters);['coast-rp'] (return curves)
-    
+    esl_data: 'gtsm_dmax'                                                          # options: ['gesla2','gesla3','gtsm_dmax'] (raw data); ['vousdoukas2018','kirezci2020','hermans2023'] (GPD parameters);['coast-rp'] (return curves)
+    match_dist_limit: 10                                                       # maximum distance ESL datapoints may have from input locations to be matched [km]
     paths:                                                                      # [string] paths to input files (only need to set those that you want to use)
         gesla2: '/Volumes/Naamloos/PhD_Data/GESLA2/private_14032017_public_110292018'     
         gesla3: '/Volumes/Naamloos/PhD_Data/GESLA3'          
-        gtsm_dmax: '/Volumes/Naamloos/PhD_Data/GTSM_HighResMIP/era5/total/dmax_from_hourly'                                                   
+        gtsm_dmax: '/Volumes/Naamloos/PhD_Data/GTSM_HighResMIP/era5/total/dmax'#'_from_hourly'                                                   
         
         vousdoukas2018: '/Users/timhermans/Documents/Data/Vousdoukas18/Historical_ERA-INTERIM_wl.nc'
         kirezci2020: '/Users/timhermans/Documents/Github/projectESL/input/kirezci2020_gpd.csv'
@@ -23,7 +23,8 @@ input:
         flopros: '/Users/timhermans/Documents/Data/FLOPROS/Tiggeloven/'
         
         input_locations: '../input/ar6_wf1f_ssp245_at_gesla3_tgs.nc'            #dataset containing lon/lat coordinates for'locations' dimension, with optional ['sea_level_change'] variable with dims ['locations','years','samples']
-                                                                             
+        #input_locations: '/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-gridded-samples-total/full_sample_total_wf_1f_ssp245_at_COAST_RP_coastal_locations.zarr'    
+                                                                         
 preprocessing:                                                                # set preprocessing options for timeseries analysis (used if input_type is raw data):     
     min_yrs: 30                                                                 # [int/float] minimum tide gauge length
     resample_freq: 'D_max'                                                      # ['H_mean', 'D_mean','D_max']
@@ -34,12 +35,12 @@ preprocessing:                                                                # 
     msl_period: 1980,2014                                                       # reference period to compute MSL for, if referencing observations to MSL (TG data must cover at least half of this period)
     declus_method: 'rolling_max'                                                # ['iterative_descending','rolling_max'] how to decluster the extremes
     declus_window: 3                                                            # [int] declustering window length to use
-    extremes_threshold: 98                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
-    
+    extremes_threshold: 99                                                      # [0<float<100] threshold above which to define events at resamlpe_freq frequency extreme
+    store_esls: 1                                                               # whether to store peaks over threshold used to fit ESL distribution to csv files (1 file per site)
         
 projecting:                                                                  # set projection options
-    below_threshold: 'None'                                                     # ['mhhw','Sweet22',None] if/how to treat return frequencies/heights below extremes threshold. Default: None. No effect if using direct return curve input (e.g., COAST-RP).                                                             
-    refFreqs: 'flopros'                                                            # ['diva,'flopros', or constant] reference frequency to use for amplifications
-    target_years: 2100,2150,2200,2250,2300                                                     # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections); leave empty for no output
+    below_threshold: 'None'                                                  # ['mhhw','Sweet22',None] if/how to treat return frequencies/heights below extremes threshold. Default: None. No effect if using direct return curve input (e.g., COAST-RP).                                                             
+    refFreqs: 'diva'                                                      # ['diva,'flopros', or constant] reference frequency to use for amplifications
+    target_years:                                                            # [comma-separated series of ints, e.g., 2050,2100] years to project AFs for (must be contained in SLR projections); leave empty for no output
     target_AFs:                                                              # [comma-separated series of ints/floats, e.g., 10,100] AFs to project timing for; leave empty for no output
-    target_freqs: 10                                                              # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for; leave empty for no output
+    target_freqs:                                                            # [comma-separated series of ints/floats, e.g., 0.1,1] target future frequencies to project timing for; leave empty for no output
