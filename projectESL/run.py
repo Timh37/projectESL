@@ -17,17 +17,17 @@ from esl_analysis import ESL_stats_from_raw_GESLA, ESL_stats_from_gtsm_dmax, mul
 from projecting import compute_AFs, compute_AF_timing
 from utils import if_scalar_to_list
 
-def get_ESL_statistics(esl_data,path_to_data,input_locations,match_dist_limit,preproc_settings=None,n_samples=None,f=None):
+def get_ESL_statistics(esl_data,path_to_data,input_locations,match_dist_limit,preproc_settings=None,n_samples=None,f=None,output_dir=None):
     print('Extracting ESL information for queried input locations...')
     esl_statistics = {} #initialize dictionary to hold ESL information
     esl_data = esl_data.lower()
     
     if esl_data in ['gesla2','gesla3']: #if using raw data from GESLA
-        esl_statistics = ESL_stats_from_raw_GESLA(esl_data,path_to_data,input_locations,preproc_settings,match_dist_limit) #dictionary output
+        esl_statistics = ESL_stats_from_raw_GESLA(esl_data,path_to_data,input_locations,preproc_settings,match_dist_limit,output_dir) #dictionary output
         esl_statistics = esl_statistics_dict_to_ds(input_locations,esl_statistics)
         
     elif cfg['input']['esl_data'].lower() in ['gtsm_dmax']:
-        esl_statistics = ESL_stats_from_gtsm_dmax(path_to_data,input_locations,preproc_settings,match_dist_limit)
+        esl_statistics = ESL_stats_from_gtsm_dmax(path_to_data,input_locations,preproc_settings,match_dist_limit,output_dir)
             
     elif cfg['input']['esl_data'].lower() in ['hermans2023','kirezci2020','vousdoukas2018','gtsm_dmax_gpd']:
         esl_statistics = open_gpd_parameters(esl_data,path_to_data,input_locations,n_samples,match_dist_limit)
@@ -137,6 +137,10 @@ if __name__ == "__main__":
     
     cfg = load_config('../config.yml') #load config
     
+    output_dir = os.path.join(cfg['general']['output_dir'],cfg['general']['run_name'])
+    if os.path.exists(output_dir) == False:
+        os.mkdir(output_dir)
+        
     #assign a few settings to local variables
     n_samples               = cfg['general']['n_samples'] #number of samples for uncertainty propagation
     esl_data                = cfg['input']['esl_data'] #type of ESL data to load/analyze
@@ -173,9 +177,9 @@ if __name__ == "__main__":
     #input_locations = input_locations.isel(locations = np.where(np.isfinite(input_locations.sea_level_change.isel(years=0,samples=0)))[0])#temporary, fix nans in nearest interpolation from full gridded samples
     
     ### fitting stage
-    esl_statistics = get_ESL_statistics(esl_data,cfg['input']['paths'][esl_data],input_locations,match_dist_limit,cfg['preprocessing'],n_samples,f)  #get ESL information at input locations
+    esl_statistics = get_ESL_statistics(esl_data,cfg['input']['paths'][esl_data],input_locations,match_dist_limit,cfg['preprocessing'],n_samples,f,output_dir)  #get ESL information at input locations
     esl_statistics.attrs['cfg'] = str(cfg)
-    save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),esl_statistics,'esl_statistics.nc') #store
+    save_ds_to_netcdf(output_dir,esl_statistics,'esl_statistics.nc') #store
     
     ### projecting stage
     refFreqs = get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs) #grab reference frequencies for AFs at each site
@@ -190,7 +194,7 @@ if __name__ == "__main__":
     output_ds['refFreq'] = (['locations'],refFreqs)
     output_ds.attrs['cfg'] = str(cfg)
     
-    save_ds_to_netcdf(os.path.join(cfg['general']['output_dir'],cfg['general']['run_name']),output_ds,'projectESL_output.nc') #store
+    save_ds_to_netcdf(output_dir,output_ds,'projectESL_output.nc') #store
 
     cluster.close()
     '''
