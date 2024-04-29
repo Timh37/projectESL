@@ -125,6 +125,7 @@ def lazy_output_to_ds(output,f,out_qnts,esl_statistics,target_years=None,target_
     if len(target_years)>0:
         output_ds['z_fut'] = (['locations','qnt','f','target_year'],np.stack([k[1] for k in output]))
         output_ds['AF'] = (['locations','qnt','target_year'],np.stack([k[2] for k in output]))
+        output_ds['maxAF'] = (['locations'],np.stack([k[3] for k in output]))
         output_ds = output_ds.assign_coords({'target_year':target_years})
         
     if len(target_AFs)>0:
@@ -152,7 +153,7 @@ def get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs=No
         refFreqs = find_flopros_protection_levels(qlons,qlats,path_to_refFreqs,10)    
     
     elif np.isscalar(refFreq_data): #use constant reference frequency for every location
-            refFreqs = np.tile(refFreq_data,len(esl_statistics))
+            refFreqs = np.tile(refFreq_data,len(esl_statistics.locations))
     else: 
         raise Exception('Rquested reference frequency must be "diva", "flopros" or a constant.')
             
