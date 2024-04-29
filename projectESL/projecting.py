@@ -104,7 +104,7 @@ def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
         
         #do a first filtering based on angular distance to segment/polygon center points (more efficient than shapely distance)
         kmdists = kmdist(qlat,qlon,latc,lonc)
-        nearby = np.where(kmdists<50)[0]
+        nearby = np.where(kmdists<5000)[0]
         if len(nearby)==0:
             nearest_segments.append(np.nan)
             #add a warning?
@@ -114,7 +114,7 @@ def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
         
         #for these segments, refine the distance computation using a coordinate-specific appropriate reference system
         p_gdf = geopd.GeoDataFrame(geometry=[p], crs='epsg:4326') #put query point into cartesian geodataframe
-        if qlat<0: #degermine appropriate epsg system
+        if qlat<0: #determine appropriate epsg system
             e = 32701 + np.floor_divide((qlon+180),6)
             if qlat<-80:
                 e = 32761
@@ -128,7 +128,7 @@ def find_flopros_protection_levels(qlons,qlats,flopros_dir,maxdist):
         
         km_dists = np.array([p_gdf.distance(k).values[0] for k in polygons_.geometry])/1000 #compute kilometric distances
         
-        if np.min(km_dists>maxdist): #if nearest point on nearest segment is more than 15km away
+        if np.min(km_dists>maxdist): #if nearest point on nearest segment is more than max dist km away
             nearest_segments.append(np.nan)
             #add a warning?
             continue
@@ -158,7 +158,7 @@ def find_diva_protection_levels(qlons,qlats,diva_fn,maxdist):
         
         #do a first filtering based on angular distance to segment/polygon center points (more efficient than shapely distance)
         kmdists = kmdist(qlat,qlon,diva.lati.values,diva.longi.values)
-        nearby = np.where(kmdists<50)[0]
+        nearby = np.where(kmdists<500)[0]
         if len(nearby)==0:
             nearest_segments.append(np.nan)
             #add a warning?
