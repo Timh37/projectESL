@@ -182,8 +182,12 @@ if __name__ == "__main__":
     save_ds_to_netcdf(output_dir,esl_statistics,'esl_statistics.nc') #store
     
     ### projecting stage
-    refFreqs = get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs) #grab reference frequencies for AFs at each site
-    
+    if np.array(refFreq_data).dtype=='int' or np.array(refFreq_data).dtype=='float': #use constant reference frequency for every location
+        refFreqs = get_refFreqs(refFreq_data,input_locations,esl_statistics) #grab reference frequencies for AFs at each site
+    else:
+        path_to_refFreqs = cfg['input']['paths'][refFreq_data]
+        refFreqs = get_refFreqs(refFreq_data,input_locations,esl_statistics,path_to_refFreqs)
+        
     if cfg['general']['use_central_esl_estimates_only']:
         esl_statistics=esl_statistics.drop(['cov','scale_samples','shape_samples'],errors='ignore')
         
