@@ -1,5 +1,4 @@
 .DS_Store
+*.zarr
 __pycache__
-output/
-input/
 old/
