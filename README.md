@@ -13,7 +13,7 @@ the input dataset is expected to be formatted according to the format of FACTS r
 
 **projectESL** allows the user to derive extreme sea-level distributions from various data sources. The following table details these options and the data required for them:
 
-| **Input otion** | **Required data**                                                           |
+| **Input option** | **Required data**                                                           |
 |-----------------|-----------------------------------------------------------------------------|
 | gesla2          | Available from <https://gesla787883612.wordpress.com/gesla2/>               |
 | gesla3          | Available from <https://gesla787883612.wordpress.com/downloads/>            |
@@ -25,7 +25,7 @@ the input dataset is expected to be formatted according to the format of FACTS r
 The user has the option to use constant reference frequencies for the computation of amplification factors, to use estimated flood protection standards based on historical cost-benefit modeling, or to use custom flood protection standards:
 
 
-| **Input otion** | **Required data**                                                           |
+| **Input option** | **Required data**                                                           |
 |-----------------|-----------------------------------------------------------------------------|
 | diva            | Available upon request from Daniel Lincke                                   |
 | flopros         | Available from <https://zenodo.org/records/3475120>                         |
