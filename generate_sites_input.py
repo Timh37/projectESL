@@ -36,7 +36,7 @@ def make_projectESL_input(location_names,location_lons,location_lats,path_to_sl=
 
 if __name__ == "__main__":
     
-    
+    '''
     #COAST-RP
     crp_points = pd.read_pickle('/Volumes/Naamloos/PhD_Data/COAST_RP/COAST_RP_full_dataset/pxyn_coastal_points.xyn')
     crp_points = crp_points[crp_points.station.str.startswith('i')]
@@ -46,14 +46,14 @@ if __name__ == "__main__":
                                        '/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-gridded-samples-total/full_sample_total_wf_1f_ssp245.zarr',
                                        10000,[2000,2150])
     input_data.to_zarr(os.path.join('input/full_sample_total_wf_1f_ssp245_at_coastal_COAST_RP.zarr'))
-    
+    '''
     
     #coastal GESLA3
     meta = pd.read_csv('/Volumes/Naamloos/PhD_Data/GESLA3/GESLA3_ALL.csv')
     meta = meta[(meta['GAUGE TYPE']=='Coastal') & (meta['OVERALL RECORD QUALITY']=='No obvious issues') & (meta['NUMBER OF YEARS'] >= 30) & (pd.to_datetime(meta['END DATE/TIME'],format='mixed').dt.year>=2000)].reset_index(drop=True) #only consider coastal gauges without issues with sufficient length
 
     input_data = make_projectESL_input(meta['FILE NAME'],meta['LONGITUDE'],meta['LATITUDE'],
-                                       '/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-gridded-samples-total/full_sample_total_wf_1f_ssp245.zarr',
+                                       '/Volumes/Naamloos/PhD_Data/AR6_projections/ar6-gridded-samples-total/full_sample_total_wf_1f_ssp585.zarr',
                                        10000,[2000,2150])
-    input_data.to_zarr(os.path.join('input/full_sample_total_wf_1f_ssp245_at_coastal_GESLA3.zarr'))
+    input_data.to_zarr(os.path.join('input/full_sample_total_wf_1f_ssp585_at_coastal_GESLA3.zarr'))
     
