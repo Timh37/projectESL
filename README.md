@@ -17,6 +17,7 @@ the input dataset is expected to be formatted according to the format of FACTS r
 |-----------------|-----------------------------------------------------------------------------|
 | gesla2          | Available from <https://gesla787883612.wordpress.com/gesla2/>               |
 | gesla3          | Available from <https://gesla787883612.wordpress.com/downloads/>            |
+| gtsm_dmax       | Available from <https://cds.climate.copernicus.eu/cdsapp#!/dataset/sis-water-level-change-timeseries-cmip6?tab=overview>            |
 | vousdoukas2018  | input/Vousdoukas2018_Historical_ERA-INTERIM_wl.nc (based on surge only)     |
 | virezci2020     | input/Kirezci2020_gpd.csv                                                   |
 | hermans2023     | input/Hermans2023_gesla3_gpd_daily_max_potATS_Solari.nc                     |
