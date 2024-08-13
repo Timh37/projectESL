@@ -63,6 +63,7 @@ def ESL_stats_from_gtsm_dmax(gtsm_path,input_locations,preproc_settings,match_di
     esl_statistics['nlogl'] = nlogl
     esl_statistics['cov'] = cov_mats
     esl_statistics['avg_extr_pyear'] = avg_extr_pyear
+    esl_statistics['mhhw'] = gtsm.waterlevel.resample(time='2D').max().mean(dim='time') #long-term mean of 2-daily maxima
     esl_statistics = esl_statistics.drop(['gpd_params','params'])
     
     return esl_statistics
@@ -155,6 +156,7 @@ def ESL_stats_from_raw_GESLA(gesla_version,path_to_gesla,input_locations,preproc
                 gpd_params = fit_gpd_to_gesla_extremes(extremes)
                 
                 esl_statistics[this_id] = gpd_params
+                esl_statistics[this_id]['mhhw'] = extremes[esl_file].attrs['mhhw']
                 esl_statistics[this_id]['vdatum'] = dfs[esl_file].attrs['vdatum']
                 esl_statistics[this_id]['matched_lon'] = dfs[esl_file].attrs['longitude']
                 esl_statistics[this_id]['matched_lat'] = dfs[esl_file].attrs['latitude']
