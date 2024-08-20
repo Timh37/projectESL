@@ -492,7 +492,7 @@ def open_gtsm_waterlevels(gtsm_dir, input_locations, match_dist_limit):
     matched_ids = gtsm.stations.values[np.array(min_idx)[np.isfinite(min_idx)].astype('int')]
     gtsm = gtsm.isel(stations = np.array(min_idx)[np.isfinite(min_idx)].astype('int'))
     gtsm = gtsm.rename({'stations':'locations','station_x_coordinate':'matched_lon','station_y_coordinate':'matched_lat'})
-    gtsm = gtsm.assign_coords({'matched_id':('locations',matched_ids),'lon':input_locations.lon[np.isfinite(min_idx)],'lat':input_locations.lat[np.isfinite(min_idx)]})
+    gtsm = gtsm.assign_coords({'matched_id':('locations',matched_ids),'lon':('locations',input_locations.lon[np.isfinite(min_idx)].values),'lat':('locations',input_locations.lat[np.isfinite(min_idx)].values)})
     gtsm['locations'] =  input_locations.locations[np.isfinite(min_idx)]
         
     gtsm = gtsm.load() #load data into memory
