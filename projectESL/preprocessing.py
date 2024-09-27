@@ -15,23 +15,25 @@ def resample_data(rawdata,resample_freq):
     h_means.loc[h_means['use_flag']!=1,'sea_level'] = np.nan #set hours during which 1 or more observations are bad to nan
     h_means = h_means[np.isfinite(h_means['sea_level'])] #drop nans
     
-    if resample_freq == 'H_mean':
+    if resample_freq == 'H':
+        output = rawdata.resample('h').first()
+        output.loc[output['use_flag']!=1,'sea_level'] = np.nan
+    elif resample_freq == 'H_mean':
         output = h_means
     elif resample_freq == 'D_mean':
         hours_per_day = h_means.resample('D').count()
         d_means = h_means.resample('D').mean()
         d_means = d_means[hours_per_day['sea_level']>=12] #only use days with 12 hourly means or more
-        d_means = d_means[np.isfinite(d_means['sea_level'])] #drop nans
         output = d_means
     elif resample_freq == 'D_max':
         hours_per_day = h_means.resample('D').count()
         d_maxs = h_means.resample('D').max()
         d_maxs = d_maxs[hours_per_day['sea_level']>=12] #only use days with 12 hourly means or more
-        d_maxs = d_maxs[np.isfinite(d_maxs['sea_level'])] #drop nans
         output = d_maxs
     else:
         raise Exception('Unknown resample frequency.')
-        
+    
+    output = output[np.isfinite(output['sea_level'])] #drop nans
     output.attrs['resample_freq'] = resample_freq
     return output
 
